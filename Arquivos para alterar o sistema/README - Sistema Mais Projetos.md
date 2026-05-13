@@ -43,3 +43,6 @@ Configure o arquivo firebaseConfig com as chaves do seu projeto.
 Deploy recomendado: Vercel ou Firebase Hosting.
 
 © 2024 Mais Projetos Engenharia Operacional.
+
+teste
+
