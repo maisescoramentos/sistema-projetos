@@ -138,9 +138,11 @@ export default function App() {
   const [filtroStatus, setFiltroStatus] = useState('');
   const [buscaTermo, setBuscaTermo] = useState('');
 
-  // (9) Estados de Filtro de Período do Dashboard
+  // (9) Estados de Filtro do Dashboard
   const [dashPeriodoInicio, setDashPeriodoInicio] = useState('');
   const [dashPeriodoFim, setDashPeriodoFim] = useState('');
+  const [dashFiltroProjetista, setDashFiltroProjetista] = useState('');
+  const [dashFiltroStatus, setDashFiltroStatus] = useState('');
 
   // Estados das Configurações (Aba Configurações)
   const [novoUsuarioNome, setNovoUsuarioNome] = useState('');
@@ -354,15 +356,17 @@ export default function App() {
     });
   }, [projetos, filtroProjetista, filtroStatus, buscaTermo]);
 
-  // --- (9) Dashboard com filtro de período ---
+  // (9) Dashboard com filtros de período, projetista e status
   const projetosNoPeriodo = useMemo(() => {
     return projetos.filter(p => {
       const data = p.dataInicio || '';
       if (dashPeriodoInicio && data < dashPeriodoInicio) return false;
       if (dashPeriodoFim && data > dashPeriodoFim) return false;
+      if (dashFiltroProjetista && p.projetista !== dashFiltroProjetista) return false;
+      if (dashFiltroStatus && p.status !== dashFiltroStatus) return false;
       return true;
     });
-  }, [projetos, dashPeriodoInicio, dashPeriodoFim]);
+  }, [projetos, dashPeriodoInicio, dashPeriodoFim, dashFiltroProjetista, dashFiltroStatus]);
 
   const stats = useMemo(() => {
     const base = projetosNoPeriodo;
@@ -370,20 +374,67 @@ export default function App() {
     const concluidos = base.filter(p => p.status === 'Concluído').length;
     const emRevisao = base.filter(p => p.status === 'Revisão').length;
 
+    // Ranking por projetista com status
     const porProjetista = base.reduce((acc, p) => {
       if (!acc[p.projetista]) {
-        acc[p.projetista] = { total: 0, porStatus: {} };
+        acc[p.projetista] = { total: 0, porStatus: {}, porTipo: {} };
       }
       acc[p.projetista].total += 1;
       acc[p.projetista].porStatus[p.status] = (acc[p.projetista].porStatus[p.status] || 0) + 1;
+      const tipoKey = p.tipo || 'Não informado';
+      acc[p.projetista].porTipo[tipoKey] = (acc[p.projetista].porTipo[tipoKey] || 0) + 1;
       return acc;
     }, {});
 
     const rankingProjetistas = Object.entries(porProjetista)
-      .map(([nome, dados]) => ({ nome, ...dados }))
+      .map(([nome, dados]) => ({
+        nome,
+        ...dados,
+        percentual: total > 0 ? Math.round((dados.total / total) * 100) : 0
+      }))
       .sort((a, b) => b.total - a.total);
 
-    return { total, concluidos, emRevisao, rankingProjetistas };
+    // Todos os tipos únicos presentes no período
+    const tiposUnicos = [...new Set(base.map(p => p.tipo || 'Não informado'))].sort();
+
+    // Contagem de projetos por tipo (geral)
+    const porTipoGeral = base.reduce((acc, p) => {
+      const t = p.tipo || 'Não informado';
+      acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {});
+
+    const rankingTipos = Object.entries(porTipoGeral)
+      .map(([tipo, qtd]) => ({ tipo, qtd, percentual: total > 0 ? Math.round((qtd / total) * 100) : 0 }))
+      .sort((a, b) => b.qtd - a.qtd);
+
+    // Motivos de revisão
+    const revisoes = base.filter(p => p.status === 'Revisão');
+    const totalRevisoes = revisoes.length;
+    const porMotivo = revisoes.reduce((acc, p) => {
+      const motivo = p.motivoRevisao || 'Não informado';
+      acc[motivo] = (acc[motivo] || 0) + 1;
+      return acc;
+    }, {});
+
+    const rankingMotivos = Object.entries(porMotivo)
+      .map(([motivo, qtd]) => ({
+        motivo,
+        qtd,
+        percentual: totalRevisoes > 0 ? Math.round((qtd / totalRevisoes) * 100) : 0
+      }))
+      .sort((a, b) => b.qtd - a.qtd);
+
+    return {
+      total,
+      concluidos,
+      emRevisao,
+      rankingProjetistas,
+      tiposUnicos,
+      rankingTipos,
+      totalRevisoes,
+      rankingMotivos
+    };
   }, [projetosNoPeriodo]);
 
   // --- Lógica de Configurações (Usuários) ---
@@ -674,11 +725,13 @@ export default function App() {
     </div>
   );
 
-  // (9) Dashboard com filtro de período
+  // (9) Dashboard com filtros de período, projetista e status
   const renderDashboard = () => {
-    const limparPeriodo = () => {
+    const limparFiltros = () => {
       setDashPeriodoInicio('');
       setDashPeriodoFim('');
+      setDashFiltroProjetista('');
+      setDashFiltroStatus('');
     };
 
     const setPeriodoMes = () => {
@@ -695,132 +748,330 @@ export default function App() {
       setDashPeriodoFim(`${hoje.getFullYear()}-12-31`);
     };
 
+    const filtrosAtivos = [dashPeriodoInicio, dashPeriodoFim, dashFiltroProjetista, dashFiltroStatus].filter(Boolean).length;
+
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
           <BarChart3 className="text-blue-600" /> Visão Geral da Produção
         </h2>
 
-        {/* Filtro de Período */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4 justify-between">
-            <div className="flex flex-col sm:flex-row gap-3 flex-1">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Período de</label>
-                <input
-                  type="date"
-                  value={dashPeriodoInicio}
-                  onChange={(e) => setDashPeriodoInicio(e.target.value)}
-                  className="w-full sm:w-44 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">até</label>
-                <input
-                  type="date"
-                  value={dashPeriodoFim}
-                  onChange={(e) => setDashPeriodoFim(e.target.value)}
-                  className="w-full sm:w-44 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
+        {/* Painel de Filtros */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+              <Filter size={14} /> Filtros do Dashboard
+            </span>
+            {filtrosAtivos > 0 && (
+              <button
+                onClick={limparFiltros}
+                className="flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-700 hover:bg-red-50 px-2.5 py-1.5 rounded-lg border border-red-200 transition-colors"
+              >
+                <X size={13} /> Limpar filtros {filtrosAtivos > 0 && <span className="bg-red-100 text-red-600 rounded-full px-1.5">{filtrosAtivos}</span>}
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Período De */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Período de</label>
+              <input
+                type="date"
+                value={dashPeriodoInicio}
+                onChange={(e) => setDashPeriodoInicio(e.target.value)}
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={setPeriodoMes} className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-2 rounded-lg border border-blue-200 transition-colors">
-                Mês atual
-              </button>
-              <button onClick={setPeriodoAno} className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-2 rounded-lg border border-blue-200 transition-colors">
-                Ano atual
-              </button>
-              <button onClick={limparPeriodo} className="text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-lg border border-slate-300 transition-colors">
-                Limpar
-              </button>
+
+            {/* Período Até */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Até</label>
+              <input
+                type="date"
+                value={dashPeriodoFim}
+                onChange={(e) => setDashPeriodoFim(e.target.value)}
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+            {/* Filtro Projetista */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Responsável</label>
+              <select
+                value={dashFiltroProjetista}
+                onChange={(e) => setDashFiltroProjetista(e.target.value)}
+                className={`w-full p-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white transition-colors ${dashFiltroProjetista ? 'border-blue-400 bg-blue-50 text-blue-800 font-semibold' : 'border-slate-300'}`}
+              >
+                <option value="">Todos os responsáveis</option>
+                {usuarios.filter(u => u.role === 'projetista' || u.role === 'admin').map(u => (
+                  <option key={u.id} value={u.nome}>{u.nome}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filtro Status */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Status</label>
+              <select
+                value={dashFiltroStatus}
+                onChange={(e) => setDashFiltroStatus(e.target.value)}
+                className={`w-full p-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white transition-colors ${dashFiltroStatus === 'Concluído' ? 'border-green-400 bg-green-50 text-green-800 font-semibold' : dashFiltroStatus === 'Revisão' ? 'border-amber-400 bg-amber-50 text-amber-800 font-semibold' : 'border-slate-300'}`}
+              >
+                <option value="">Todos os status</option>
+                {STATUS_OPTIONS.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
             </div>
           </div>
-          {(dashPeriodoInicio || dashPeriodoFim) && (
-            <p className="text-xs text-slate-500 mt-3 italic">
-              Exibindo dados de <strong>{dashPeriodoInicio ? dashPeriodoInicio.split('-').reverse().join('/') : '...'}</strong> até <strong>{dashPeriodoFim ? dashPeriodoFim.split('-').reverse().join('/') : '...'}</strong>.
-            </p>
-          )}
+
+          {/* Atalhos de período + resumo dos filtros ativos */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-100">
+            <div className="flex flex-wrap gap-2">
+              <button onClick={setPeriodoMes} className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors">
+                Mês atual
+              </button>
+              <button onClick={setPeriodoAno} className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors">
+                Ano atual
+              </button>
+            </div>
+            {filtrosAtivos > 0 && (
+              <p className="text-xs text-slate-500 italic">
+                {dashFiltroProjetista && <span className="mr-2">👤 <strong>{dashFiltroProjetista}</strong></span>}
+                {dashFiltroStatus && <span className="mr-2">🔖 <strong>{dashFiltroStatus}</strong></span>}
+                {(dashPeriodoInicio || dashPeriodoFim) && (
+                  <span>📅 <strong>{dashPeriodoInicio ? dashPeriodoInicio.split('-').reverse().join('/') : '...'}</strong> → <strong>{dashPeriodoFim ? dashPeriodoFim.split('-').reverse().join('/') : '...'}</strong></span>
+                )}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+          <div className={`bg-white p-6 rounded-xl border shadow-sm flex items-center gap-4 transition-colors ${dashFiltroStatus === '' || dashFiltroStatus === undefined ? 'border-blue-200' : 'border-slate-200'}`}>
             <div className="p-3 bg-blue-100 text-blue-700 rounded-lg">
               <HardHat size={28} />
             </div>
             <div>
-              <p className="text-sm text-slate-500 font-medium">Total de Projetos</p>
+              <p className="text-sm text-slate-500 font-medium">{dashFiltroProjetista ? `Projetos de ${dashFiltroProjetista}` : 'Total de Projetos'}</p>
               <p className="text-3xl font-bold text-slate-800">{stats.total}</p>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+          <div className={`bg-white p-6 rounded-xl border shadow-sm flex items-center gap-4 transition-colors ${dashFiltroStatus === 'Concluído' ? 'border-green-400 ring-2 ring-green-200' : 'border-slate-200'}`}>
             <div className="p-3 bg-green-100 text-green-700 rounded-lg">
               <CheckCircle2 size={28} />
             </div>
             <div>
               <p className="text-sm text-slate-500 font-medium">Concluídos</p>
               <p className="text-3xl font-bold text-slate-800">{stats.concluidos}</p>
+              {stats.total > 0 && <p className="text-xs text-green-600 font-semibold mt-0.5">{Math.round((stats.concluidos / stats.total) * 100)}% do total</p>}
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+          <div className={`bg-white p-6 rounded-xl border shadow-sm flex items-center gap-4 transition-colors ${dashFiltroStatus === 'Revisão' ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-200'}`}>
             <div className="p-3 bg-amber-100 text-amber-700 rounded-lg">
               <AlertCircle size={28} />
             </div>
             <div>
               <p className="text-sm text-slate-500 font-medium">Em Revisão</p>
               <p className="text-3xl font-bold text-slate-800">{stats.emRevisao}</p>
+              {stats.total > 0 && <p className="text-xs text-amber-600 font-semibold mt-0.5">{Math.round((stats.emRevisao / stats.total) * 100)}% do total</p>}
             </div>
           </div>
         </div>
 
+        {/* BLOCO 1 — Participação e Volume por Responsável */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-6 border-b border-slate-200 bg-slate-50">
-            <h3 className="text-lg font-bold text-slate-800">Quadro Consolidado por Responsável</h3>
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Users size={18} className="text-blue-600" /> Participação e Volume por Responsável
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">Quantidade de projetos e percentual de participação de cada projetista no período.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-white border-b border-slate-200 text-slate-600 font-medium">
                 <tr>
                   <th className="px-6 py-4">Responsável</th>
-                  <th className="px-6 py-4 text-center">Volume Total</th>
-                  <th className="px-6 py-4 text-center text-green-600">Concluído</th>
-                  <th className="px-6 py-4 text-center text-amber-600">Revisão</th>
+                  <th className="px-6 py-4 text-center">Projetos</th>
+                  <th className="px-6 py-4 text-center">% do Total</th>
+                  <th className="px-6 py-4 text-center text-green-600">Concluídos</th>
+                  <th className="px-6 py-4 text-center text-amber-600">Revisões</th>
+                  <th className="px-6 py-4">Distribuição</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {stats.rankingProjetistas.length === 0 ? (
-                  <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-500">Nenhum dado registrado no período selecionado.</td></tr>
+                  <tr><td colSpan="6" className="px-6 py-8 text-center text-slate-500">Nenhum dado registrado no período selecionado.</td></tr>
                 ) : (
-                  stats.rankingProjetistas.map((proj, idx) => {
-                    const percentage = Math.round((proj.total / stats.total) * 100) || 0;
-                    return (
-                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                        <td
-                          className="px-6 py-4 font-semibold text-blue-600 cursor-pointer hover:text-blue-800 hover:underline transition-all"
-                          onClick={() => setProjetistaDetalhe(proj.nome)}
-                        >
-                          {proj.nome}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-3">
-                            <span className="font-bold text-slate-800 w-6 text-right">{proj.total}</span>
-                            <div className="w-24 bg-slate-200 rounded-full h-2 overflow-hidden hidden sm:block">
-                              <div className="bg-blue-600 h-full rounded-full transition-all duration-1000" style={{ width: `${percentage}%` }}></div>
-                            </div>
+                  stats.rankingProjetistas.map((proj, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                      <td
+                        className="px-6 py-4 font-semibold text-blue-600 cursor-pointer hover:text-blue-800 hover:underline transition-all"
+                        onClick={() => setProjetistaDetalhe(proj.nome)}
+                      >
+                        {proj.nome}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="font-bold text-slate-800 text-base">{proj.total}</span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold ${proj.percentual >= 30 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {proj.percentual}%
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center font-medium text-green-700 bg-green-50/30">
+                        {proj.porStatus['Concluído'] || 0}
+                      </td>
+                      <td className="px-6 py-4 text-center font-medium text-amber-700 bg-amber-50/30">
+                        {proj.porStatus['Revisão'] || 0}
+                      </td>
+                      <td className="px-6 py-4 min-w-[160px]">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-blue-500 h-full rounded-full transition-all duration-700"
+                              style={{ width: `${proj.percentual}%` }}
+                            />
                           </div>
-                        </td>
-                        <td className="px-6 py-4 text-center font-medium text-green-700 bg-green-50/30">{proj.porStatus['Concluído'] || '-'}</td>
-                        <td className="px-6 py-4 text-center font-medium text-amber-700 bg-amber-50/30">{proj.porStatus['Revisão'] || '-'}</td>
-                      </tr>
-                    );
-                  })
+                          <span className="text-xs text-slate-500 w-8 text-right">{proj.percentual}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
+              {stats.rankingProjetistas.length > 0 && (
+                <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                  <tr>
+                    <td className="px-6 py-3 font-bold text-slate-700">TOTAL</td>
+                    <td className="px-6 py-3 text-center font-bold text-slate-800">{stats.total}</td>
+                    <td className="px-6 py-3 text-center font-bold text-slate-700">100%</td>
+                    <td className="px-6 py-3 text-center font-bold text-green-700">{stats.concluidos}</td>
+                    <td className="px-6 py-3 text-center font-bold text-amber-700">{stats.emRevisao}</td>
+                    <td className="px-6 py-3"></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
+
+        {/* BLOCO 2 — Projetos por Tipo × Responsável */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-200 bg-slate-50">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Wrench size={18} className="text-blue-600" /> Projetos por Tipo de Estrutura × Responsável
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">Cruzamento de quantos projetos de cada tipo cada projetista realizou no período.</p>
+          </div>
+          {stats.rankingTipos.length === 0 ? (
+            <p className="px-6 py-8 text-center text-slate-500">Nenhum dado registrado no período selecionado.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-white border-b border-slate-200 text-slate-600 font-medium">
+                  <tr>
+                    <th className="px-6 py-4 min-w-[220px]">Tipo de Estrutura</th>
+                    {stats.rankingProjetistas.map((p, i) => (
+                      <th key={i} className="px-4 py-4 text-center whitespace-nowrap">{p.nome}</th>
+                    ))}
+                    <th className="px-4 py-4 text-center font-bold text-slate-700 bg-slate-50">Total</th>
+                    <th className="px-4 py-4 text-center font-bold text-slate-700 bg-slate-50">%</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {stats.rankingTipos.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-3">
+                        <span className="font-medium text-slate-800 uppercase text-xs">{item.tipo}</span>
+                      </td>
+                      {stats.rankingProjetistas.map((proj, i) => {
+                        const qtd = proj.porTipo[item.tipo] || 0;
+                        return (
+                          <td key={i} className="px-4 py-3 text-center">
+                            {qtd > 0
+                              ? <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs">{qtd}</span>
+                              : <span className="text-slate-300 text-xs">—</span>
+                            }
+                          </td>
+                        );
+                      })}
+                      <td className="px-4 py-3 text-center bg-slate-50">
+                        <span className="font-bold text-slate-800">{item.qtd}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center bg-slate-50">
+                        <span className="text-xs font-semibold text-slate-500">{item.percentual}%</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                  <tr>
+                    <td className="px-6 py-3 font-bold text-slate-700">TOTAL</td>
+                    {stats.rankingProjetistas.map((proj, i) => (
+                      <td key={i} className="px-4 py-3 text-center font-bold text-slate-800">{proj.total}</td>
+                    ))}
+                    <td className="px-4 py-3 text-center font-bold text-slate-800 bg-slate-100">{stats.total}</td>
+                    <td className="px-4 py-3 text-center font-bold text-slate-700 bg-slate-100">100%</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* BLOCO 3 — Motivos de Revisão */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <AlertTriangle size={18} className="text-amber-500" /> Análise de Motivos de Revisão
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">Frequência de cada motivo nos projetos com status "Revisão" no período.</p>
+            </div>
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+              <AlertCircle size={16} className="text-amber-600" />
+              <span className="text-sm font-semibold text-amber-800">{stats.totalRevisoes} revisão{stats.totalRevisoes !== 1 ? 'ões' : ''} no período</span>
+            </div>
+          </div>
+          {stats.rankingMotivos.length === 0 ? (
+            <div className="px-6 py-10 text-center text-slate-500">
+              <CheckCircle2 size={32} className="mx-auto mb-3 text-green-300" />
+              <p className="font-medium">Nenhuma revisão registrada no período.</p>
+            </div>
+          ) : (
+            <div className="p-6 space-y-3">
+              {stats.rankingMotivos.map((item, idx) => (
+                <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-amber-200 hover:bg-amber-50/40 transition-colors">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <span className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${idx === 0 ? 'bg-amber-500 text-white' : idx === 1 ? 'bg-amber-300 text-amber-900' : 'bg-slate-200 text-slate-600'}`}>
+                      {idx + 1}
+                    </span>
+                    <span className="text-sm font-medium text-slate-800 uppercase truncate" title={item.motivo}>
+                      {item.motivo}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 sm:shrink-0">
+                    <div className="w-32 bg-slate-200 rounded-full h-2 overflow-hidden hidden sm:block">
+                      <div
+                        className="bg-amber-400 h-full rounded-full transition-all duration-700"
+                        style={{ width: `${item.percentual}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-amber-700 w-8 text-right">{item.percentual}%</span>
+                    <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold min-w-[2.5rem]">
+                      {item.qtd}×
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     );
   };
