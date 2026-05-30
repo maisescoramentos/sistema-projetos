@@ -86,6 +86,7 @@ const initialFormData = () => ({
   peDireito: '',
   pavimento: '',
   peso: '',
+  pesoPorTipo: {},
   numeroRevisao: '',
   motivoRevisao: '',
   outroMotivoTexto: '',
@@ -310,17 +311,24 @@ export default function App() {
       ? `OUTRO MOTIVO: ${formData.outroMotivoTexto.trim()}`
       : formData.motivoRevisao;
 
-    const novosProjetos = tiposSelecionados.map((tipoSelecionado, index) => ({
-      ...formData,
-      id: baseId + index,
-      tipo: tipoSelecionado,
-      area: Number(formData.area) || 0,
-      peDireito: Number(formData.peDireito) || 0,
-      pavimento: Number(formData.pavimento) || 0,
-      peso: Number(formData.peso) || 0,
-      numeroRevisao: numeroRevisaoFinal,
-      motivoRevisao: formData.status === 'Revisão' ? motivoFinal : ''
-    }));
+    const novosProjetos = tiposSelecionados.map((tipoSelecionado, index) => {
+      const chave = tipoSelecionado === (isOutro && outroValor.trim() ? outroValor.trim().toUpperCase() : null)
+        ? '__outro__'
+        : tipoSelecionado;
+      const pesoDoTipo = Number((formData.pesoPorTipo || {})[chave] || (formData.pesoPorTipo || {})[tipoSelecionado] || 0);
+      return {
+        ...formData,
+        id: baseId + index,
+        tipo: tipoSelecionado,
+        area: Number(formData.area) || 0,
+        peDireito: Number(formData.peDireito) || 0,
+        pavimento: formData.pavimento || '',
+        peso: pesoDoTipo,
+        pesoPorTipo: undefined,
+        numeroRevisao: numeroRevisaoFinal,
+        motivoRevisao: formData.status === 'Revisão' ? motivoFinal : ''
+      };
+    });
 
     setProjetos(prev => [...novosProjetos, ...prev]);
 
@@ -1052,7 +1060,7 @@ export default function App() {
             </div>
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
               <AlertCircle size={16} className="text-amber-600" />
-              <span className="text-sm font-semibold text-amber-800">{stats.totalRevisoes} revisão{stats.totalRevisoes !== 1 ? 'ões' : ''} no período</span>
+              <span className="text-sm font-semibold text-amber-800">{stats.totalRevisoes} revis{stats.totalRevisoes !== 1 ? 'ões' : 'ão'} no período</span>
             </div>
           </div>
           {stats.rankingMotivos.length === 0 ? (
@@ -1194,9 +1202,9 @@ export default function App() {
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <Layers size={14} className="text-slate-400" /> Pavimento (m)
+                <Layers size={14} className="text-slate-400" /> Pavimento
               </label>
-              <input type="number" step="0.01" min="0" name="pavimento" value={formData.pavimento} onChange={handleInputChange} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="Ex: 3.00" />
+              <input type="text" name="pavimento" value={formData.pavimento} onChange={handleInputChange} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="Ex: Térreo, 1º Pav..." />
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
@@ -1275,18 +1283,58 @@ export default function App() {
           {/* Tipo de Estrutura */}
           <div className="space-y-3">
             <label className="text-sm font-medium text-slate-800 uppercase tracking-wide">Tipo *</label>
-            <div className="flex flex-col gap-3 ml-1">
+            <div className="flex flex-col gap-2 ml-1">
               {tiposEstrutura.map(t => (
-                <label key={t} className="flex items-center gap-3 cursor-pointer group">
-                  <input type="checkbox" checked={formData.tipo.includes(t)} onChange={() => handleTipoChange(t)} className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500 cursor-pointer" />
-                  <span className="text-slate-800 text-[15px] group-hover:text-blue-700 transition-colors uppercase">{t}</span>
-                </label>
+                <div key={t} className="flex items-center gap-3">
+                  <label className="flex items-center gap-3 cursor-pointer group min-w-[260px]">
+                    <input type="checkbox" checked={formData.tipo.includes(t)} onChange={() => handleTipoChange(t)} className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500 cursor-pointer" />
+                    <span className="text-slate-800 text-[15px] group-hover:text-blue-700 transition-colors uppercase">{t}</span>
+                  </label>
+                  {formData.tipo.includes(t) && (
+                    <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
+                      <Weight size={13} className="text-slate-400 shrink-0" />
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Peso (kg)"
+                        value={formData.pesoPorTipo?.[t] || ''}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          pesoPorTipo: { ...(prev.pesoPorTipo || {}), [t]: e.target.value }
+                        }))}
+                        className="w-32 p-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                      />
+                      <span className="text-xs text-slate-400">kg</span>
+                    </div>
+                  )}
+                </div>
               ))}
-              <label className="flex items-center gap-3 cursor-pointer group mt-1">
-                <input type="checkbox" checked={isOutro} onChange={() => setIsOutro(!isOutro)} className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500 cursor-pointer" />
-                <span className="text-slate-800 text-[15px] uppercase mr-2">Outro:</span>
-                <input type="text" value={outroValor} onChange={(e) => setOutroValor(e.target.value)} disabled={!isOutro} className={`flex-1 border-b ${isOutro ? 'border-slate-500 focus:border-blue-600' : 'border-slate-300 bg-slate-50 cursor-not-allowed'} py-1 outline-none text-[15px] uppercase transition-colors`} placeholder={isOutro ? 'Digite a estrutura...' : ''} />
-              </label>
+              <div className="flex items-center gap-3 mt-1">
+                <label className="flex items-center gap-3 cursor-pointer group min-w-[260px]">
+                  <input type="checkbox" checked={isOutro} onChange={() => setIsOutro(!isOutro)} className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500 cursor-pointer" />
+                  <span className="text-slate-800 text-[15px] uppercase mr-2">Outro:</span>
+                  <input type="text" value={outroValor} onChange={(e) => setOutroValor(e.target.value)} disabled={!isOutro} className={`flex-1 border-b ${isOutro ? 'border-slate-500 focus:border-blue-600' : 'border-slate-300 bg-slate-50 cursor-not-allowed'} py-1 outline-none text-[15px] uppercase transition-colors`} placeholder={isOutro ? 'Digite a estrutura...' : ''} />
+                </label>
+                {isOutro && outroValor.trim() && (
+                  <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
+                    <Weight size={13} className="text-slate-400 shrink-0" />
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Peso (kg)"
+                      value={formData.pesoPorTipo?.['__outro__'] || ''}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        pesoPorTipo: { ...(prev.pesoPorTipo || {}), ['__outro__']: e.target.value }
+                      }))}
+                      className="w-32 p-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                    />
+                    <span className="text-xs text-slate-400">kg</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
