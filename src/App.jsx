@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   LayoutDashboard,
   FilePlus,
@@ -104,29 +104,47 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('minhas-tarefas');
 
   // Sistema de Usuários com ID para permitir renomear com segurança
-  const [usuarios, setUsuarios] = useState([
+  const USUARIOS_PADRAO = [
     { id: 1, nome: 'Fernanda', senha: 'admin', role: 'admin' },
     { id: 2, nome: 'Samuell', senha: '123', role: 'projetista' },
     { id: 3, nome: 'Vinicius', senha: '123', role: 'projetista' },
     { id: 4, nome: 'Victor', senha: '123', role: 'projetista' },
     { id: 5, nome: 'Valéria', senha: '123', role: 'projetista' }
-  ]);
+  ];
+  const [usuarios, setUsuarios] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('mp_usuarios');
+      return salvo ? JSON.parse(salvo) : USUARIOS_PADRAO;
+    } catch { return USUARIOS_PADRAO; }
+  });
 
-  const [tiposEstrutura, setTiposEstrutura] = useState([
-    'FORMA',
-    'TRAVAMENTO DE PILAR',
-    'TRAVAMENTO DE VIGAS',
-    'ESCORAMENTO DE VIGAS',
-    'ESCORAMENTOS DE LAJE',
-    'REESCORAMENTO 100%',
-    'REESCORAMENTO 50%',
-    'DETALHAMENTO'
-  ]);
+  const TIPOS_PADRAO = [
+    'FORMA', 'TRAVAMENTO DE PILAR', 'TRAVAMENTO DE VIGAS',
+    'ESCORAMENTO DE VIGAS', 'ESCORAMENTOS DE LAJE',
+    'REESCORAMENTO 100%', 'REESCORAMENTO 50%', 'DETALHAMENTO'
+  ];
+  const [tiposEstrutura, setTiposEstrutura] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('mp_tipos');
+      return salvo ? JSON.parse(salvo) : TIPOS_PADRAO;
+    } catch { return TIPOS_PADRAO; }
+  });
 
   // Estados Gerais
-  const [projetos, setProjetos] = useState(MOCK_DATA);
+  const [projetos, setProjetos] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('mp_projetos');
+      return salvo ? JSON.parse(salvo) : MOCK_DATA;
+    } catch { return MOCK_DATA; }
+  });
 
-  // Estados do Formulário Principal (todos os novos campos incluídos)
+
+  // --- Persistência em localStorage ---
+  useEffect(() => { localStorage.setItem('mp_usuarios', JSON.stringify(usuarios)); }, [usuarios]);
+  useEffect(() => { localStorage.setItem('mp_tipos', JSON.stringify(tiposEstrutura)); }, [tiposEstrutura]);
+  useEffect(() => { localStorage.setItem('mp_projetos', JSON.stringify(projetos)); }, [projetos]);
+
+    // Estados do Formulário Principal (todos os novos campos incluídos)
   const [formData, setFormData] = useState(initialFormData());
 
   // Estados Específicos para a opção "Outro" no Tipo de Estrutura
