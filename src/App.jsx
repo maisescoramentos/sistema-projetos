@@ -178,6 +178,10 @@ export default function App() {
   const [formEdicao, setFormEdicao] = useState({});
   const [confirmandoExclusaoId, setConfirmandoExclusaoId] = useState(null);
 
+  // Modo edição completa (abre o formulário pré-preenchido)
+  const [modoEdicao, setModoEdicao] = useState(false);
+  const [projetoEditandoId, setProjetoEditandoId] = useState(null);
+
   // Estados de Filtro (Aba Histórico)
   const [filtroProjetista, setFiltroProjetista] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
@@ -355,6 +359,29 @@ export default function App() {
         motivoRevisao: formData.status === 'Revisão' ? motivoFinal : ''
       };
     });
+
+    // Modo edição: atualiza o projeto existente
+    if (modoEdicao && projetoEditandoId) {
+      const dadosAtualizados = {
+        ...novosProjetos[0],
+        id: undefined
+      };
+      delete dadosAtualizados.id;
+      try {
+        await updateDoc(doc(db, 'projetos', String(projetoEditandoId)), dadosAtualizados);
+      } catch (err) {
+        alert('Erro ao atualizar projeto: ' + err.message);
+        return;
+      }
+      setFormData({ ...initialFormData(), projetista: currentUser?.role === 'projetista' ? currentUser.nome : '' });
+      setIsOutro(false);
+      setOutroValor('');
+      setModoEdicao(false);
+      setProjetoEditandoId(null);
+      alert('Projeto atualizado com sucesso!');
+      setActiveTab('minhas-tarefas');
+      return;
+    }
 
     // Salvar cada projeto no Firestore
     try {
@@ -684,6 +711,39 @@ export default function App() {
   };
 
   // --- Renderização dos Componentes das Abas ---
+
+  // --- Abrir formulário completo para edição ---
+  const abrirEdicaoCompleta = (projeto) => {
+    // Preenche o formData com os dados do projeto
+    setFormData({
+      numeroContrato: projeto.numeroContrato || '',
+      projetista: projeto.projetista || '',
+      cliente: projeto.cliente || '',
+      tipo: [projeto.tipo] || [],
+      status: projeto.status || 'Concluído',
+      dataInicio: projeto.dataInicio || '',
+      dataFim: projeto.dataFim || '',
+      area: projeto.area || '',
+      peDireito: projeto.peDireito || '',
+      pavimento: projeto.pavimento || '',
+      peso: projeto.peso || '',
+      pesoPorTipo: { [projeto.tipo]: projeto.peso },
+      numeroRevisao: projeto.numeroRevisao || '',
+      motivoRevisao: projeto.motivoRevisao?.startsWith('OUTRO MOTIVO:')
+        ? 'OUTRO MOTIVO'
+        : projeto.motivoRevisao || '',
+      outroMotivoTexto: projeto.motivoRevisao?.startsWith('OUTRO MOTIVO:')
+        ? projeto.motivoRevisao.replace('OUTRO MOTIVO: ', '')
+        : '',
+      projetoCliente: projeto.projetoCliente || '',
+      notas: projeto.notas || ''
+    });
+    setIsOutro(false);
+    setOutroValor('');
+    setModoEdicao(true);
+    setProjetoEditandoId(projeto.id);
+    setActiveTab('form');
+  };
 
   // --- Excluir Projeto ---
   const excluirProjeto = async (id) => {
@@ -1481,7 +1541,7 @@ export default function App() {
 
           <div className="pt-4 border-t border-slate-200 flex justify-end">
             <button type="submit" className="w-full sm:w-auto bg-blue-800 hover:bg-blue-900 text-white font-medium py-3 px-8 rounded-lg shadow-md transition-colors flex items-center justify-center gap-2 text-lg">
-              <Save size={22} /> Salvar Formulário
+              <Save size={22} /> {modoEdicao ? 'Salvar Alterações' : 'Salvar Formulário'}
             </button>
           </div>
         </form>
