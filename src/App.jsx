@@ -177,6 +177,7 @@ export default function App() {
   const [editandoProjetoId, setEditandoProjetoId] = useState(null);
   const [formEdicao, setFormEdicao] = useState({});
   const [confirmandoExclusaoId, setConfirmandoExclusaoId] = useState(null);
+  const [projetoDetalhe, setProjetoDetalhe] = useState(null);
 
   // Modo edição completa (abre o formulário pré-preenchido)
   const [modoEdicao, setModoEdicao] = useState(false);
@@ -762,8 +763,105 @@ export default function App() {
   const renderMinhasTarefas = () => {
     const meusProjetos = projetos.filter(p => p.projetista === currentUser?.nome);
 
+    const fmt = (d) => d ? d.split('-').reverse().join('/') : '—';
+
     return (
       <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in zoom-in-95 duration-300">
+
+        {/* Modal de Detalhes do Projeto */}
+        {projetoDetalhe && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-150" onClick={() => setProjetoDetalhe(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-start justify-between p-6 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center gap-3 mb-1">
+                    <span className="text-2xl font-bold text-slate-800">{projetoDetalhe.numeroContrato}</span>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${projetoDetalhe.status === 'Concluído' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                      {projetoDetalhe.status}{projetoDetalhe.numeroRevisao ? ` — Rev. #${projetoDetalhe.numeroRevisao}` : ''}
+                    </span>
+                  </div>
+                  <p className="text-slate-500 text-sm">{projetoDetalhe.cliente}</p>
+                </div>
+                <button onClick={() => setProjetoDetalhe(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Projetista</p>
+                  <p className="font-semibold text-slate-800">{projetoDetalhe.projetista || '—'}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Tipo de Estrutura</p>
+                  <p className="font-semibold text-slate-800 uppercase">{projetoDetalhe.tipo}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Data Início</p>
+                  <p className="font-semibold text-slate-800">{fmt(projetoDetalhe.dataInicio)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Data Fim</p>
+                  <p className="font-semibold text-slate-800">{fmt(projetoDetalhe.dataFim)}</p>
+                </div>
+                {projetoDetalhe.area > 0 && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Área</p>
+                    <p className="font-semibold text-slate-800">{projetoDetalhe.area} m²</p>
+                  </div>
+                )}
+                {projetoDetalhe.peDireito > 0 && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Pé Direito</p>
+                    <p className="font-semibold text-slate-800">{projetoDetalhe.peDireito} m</p>
+                  </div>
+                )}
+                {projetoDetalhe.pavimento && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Pavimento</p>
+                    <p className="font-semibold text-slate-800">{projetoDetalhe.pavimento}</p>
+                  </div>
+                )}
+                {projetoDetalhe.peso > 0 && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Peso</p>
+                    <p className="font-semibold text-slate-800">{projetoDetalhe.peso.toLocaleString('pt-BR')} kg</p>
+                  </div>
+                )}
+                {projetoDetalhe.projetoCliente && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Projeto do Cliente</p>
+                    <p className="font-semibold text-slate-800">{projetoDetalhe.projetoCliente}</p>
+                  </div>
+                )}
+                {projetoDetalhe.motivoRevisao && (
+                  <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <p className="text-xs text-amber-600 uppercase font-semibold mb-1">Motivo da Revisão</p>
+                    <p className="font-semibold text-amber-800">{projetoDetalhe.motivoRevisao}</p>
+                  </div>
+                )}
+                {projetoDetalhe.notas && (
+                  <div className="col-span-2 bg-blue-50 border border-blue-100 rounded-xl p-4">
+                    <p className="text-xs text-blue-500 uppercase font-semibold mb-1">Observações</p>
+                    <p className="text-slate-700">{projetoDetalhe.notas}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex justify-end gap-3 px-6 pb-6">
+                <button onClick={() => { setProjetoDetalhe(null); abrirEdicaoCompleta(projetoDetalhe); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors">
+                  <Edit2 size={15} /> Editar Projeto
+                </button>
+                <button onClick={() => setProjetoDetalhe(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors">
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -795,7 +893,7 @@ export default function App() {
                 ) : (
                   meusProjetos.map(projeto => (
                     <React.Fragment key={projeto.id}>
-                      <tr className="hover:bg-slate-50 transition-colors">
+                      <tr className="hover:bg-blue-50 transition-colors cursor-pointer" onClick={() => { if (editandoProjetoId !== projeto.id && confirmandoExclusaoId !== projeto.id) setProjetoDetalhe(projeto); }}>
                         <td className="px-6 py-4">
                           {editandoProjetoId === projeto.id ? (
                             <div className="flex flex-col gap-1">
@@ -824,7 +922,7 @@ export default function App() {
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                           {editandoProjetoId === projeto.id ? (
                             <div className="flex flex-col gap-1">
                               <input className="border border-slate-300 rounded px-2 py-1 text-xs w-48" value={formEdicao.tipo || ''} onChange={e => setFormEdicao(p => ({...p, tipo: e.target.value}))} placeholder="Tipo" />
