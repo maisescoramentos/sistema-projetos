@@ -173,6 +173,11 @@ export default function App() {
   const [isOutro, setIsOutro] = useState(false);
   const [outroValor, setOutroValor] = useState('');
 
+  // Estados de Edição/Exclusão de Projeto
+  const [editandoProjetoId, setEditandoProjetoId] = useState(null);
+  const [formEdicao, setFormEdicao] = useState({});
+  const [confirmandoExclusaoId, setConfirmandoExclusaoId] = useState(null);
+
   // Estados de Filtro (Aba Histórico)
   const [filtroProjetista, setFiltroProjetista] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
@@ -680,6 +685,24 @@ export default function App() {
 
   // --- Renderização dos Componentes das Abas ---
 
+  // --- Excluir Projeto ---
+  const excluirProjeto = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'projetos', String(id)));
+      setConfirmandoExclusaoId(null);
+    } catch (err) { alert('Erro ao excluir: ' + err.message); }
+  };
+
+  // --- Salvar Edição de Projeto ---
+  const salvarEdicaoProjeto = async (id) => {
+    try {
+      const { id: _id, ...dados } = formEdicao;
+      await updateDoc(doc(db, 'projetos', String(id)), dados);
+      setEditandoProjetoId(null);
+      setFormEdicao({});
+    } catch (err) { alert('Erro ao salvar edição: ' + err.message); }
+  };
+
   const renderMinhasTarefas = () => {
     const meusProjetos = projetos.filter(p => p.projetista === currentUser?.nome);
 
@@ -703,41 +726,108 @@ export default function App() {
                   <th className="px-6 py-4">Início → Fim</th>
                   <th className="px-6 py-4">Tipo Estrutura</th>
                   <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {meusProjetos.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="px-6 py-12 text-center text-slate-500">
+                    <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
                       <CheckCircle2 size={32} className="mx-auto mb-3 text-slate-300" />
                       Nenhum projeto na sua fila no momento!
                     </td>
                   </tr>
                 ) : (
                   meusProjetos.map(projeto => (
-                    <tr key={projeto.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-slate-800">{projeto.numeroContrato}</div>
-                        <div className="text-slate-500 text-xs mt-0.5">{projeto.cliente}</div>
-                      </td>
-                      <td className="px-6 py-4 text-slate-600">
-                        <div className="flex items-center gap-2">
-                          <Calendar size={14} className="text-slate-400" />
-                          <span>{projeto.dataInicio ? projeto.dataInicio.split('-').reverse().join('/') : '—'}</span>
-                          <ChevronRight size={14} className="text-slate-300" />
-                          <span>{projeto.dataFim ? projeto.dataFim.split('-').reverse().join('/') : '—'}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-slate-700 font-medium uppercase text-xs">{projeto.tipo}</div>
-                        {projeto.status === 'Revisão' && projeto.numeroRevisao && (
-                          <div className="text-amber-700 text-xs mt-0.5 font-semibold">Revisão #{projeto.numeroRevisao}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        {renderStatusDropdown(projeto)}
-                      </td>
-                    </tr>
+                    <React.Fragment key={projeto.id}>
+                      <tr className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          {editandoProjetoId === projeto.id ? (
+                            <div className="flex flex-col gap-1">
+                              <input className="border border-slate-300 rounded px-2 py-1 text-xs w-32" value={formEdicao.numeroContrato || ''} onChange={e => setFormEdicao(p => ({...p, numeroContrato: e.target.value}))} placeholder="Contrato" />
+                              <input className="border border-slate-300 rounded px-2 py-1 text-xs w-48" value={formEdicao.cliente || ''} onChange={e => setFormEdicao(p => ({...p, cliente: e.target.value}))} placeholder="Cliente" />
+                            </div>
+                          ) : (
+                            <>
+                              <div className="font-semibold text-slate-800">{projeto.numeroContrato}</div>
+                              <div className="text-slate-500 text-xs mt-0.5">{projeto.cliente}</div>
+                            </>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-slate-600">
+                          {editandoProjetoId === projeto.id ? (
+                            <div className="flex flex-col gap-1">
+                              <input type="date" className="border border-slate-300 rounded px-2 py-1 text-xs" value={formEdicao.dataInicio || ''} onChange={e => setFormEdicao(p => ({...p, dataInicio: e.target.value}))} />
+                              <input type="date" className="border border-slate-300 rounded px-2 py-1 text-xs" value={formEdicao.dataFim || ''} onChange={e => setFormEdicao(p => ({...p, dataFim: e.target.value}))} />
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Calendar size={14} className="text-slate-400" />
+                              <span>{projeto.dataInicio ? projeto.dataInicio.split('-').reverse().join('/') : '—'}</span>
+                              <ChevronRight size={14} className="text-slate-300" />
+                              <span>{projeto.dataFim ? projeto.dataFim.split('-').reverse().join('/') : '—'}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {editandoProjetoId === projeto.id ? (
+                            <div className="flex flex-col gap-1">
+                              <input className="border border-slate-300 rounded px-2 py-1 text-xs w-48" value={formEdicao.tipo || ''} onChange={e => setFormEdicao(p => ({...p, tipo: e.target.value}))} placeholder="Tipo" />
+                              <input className="border border-slate-300 rounded px-2 py-1 text-xs w-24" type="number" value={formEdicao.peso || ''} onChange={e => setFormEdicao(p => ({...p, peso: Number(e.target.value)}))} placeholder="Peso (kg)" />
+                            </div>
+                          ) : (
+                            <>
+                              <div className="text-slate-700 font-medium uppercase text-xs">{projeto.tipo}</div>
+                              {projeto.status === 'Revisão' && projeto.numeroRevisao && (
+                                <div className="text-amber-700 text-xs mt-0.5 font-semibold">Revisão #{projeto.numeroRevisao}</div>
+                              )}
+                            </>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {editandoProjetoId === projeto.id ? (
+                            <select className="border border-slate-300 rounded px-2 py-1 text-xs" value={formEdicao.status || ''} onChange={e => setFormEdicao(p => ({...p, status: e.target.value}))}>
+                              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          ) : (
+                            renderStatusDropdown(projeto)
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {editandoProjetoId === projeto.id ? (
+                            <div className="flex gap-2">
+                              <button onClick={() => salvarEdicaoProjeto(projeto.id)} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors">
+                                <Save size={13} /> Salvar
+                              </button>
+                              <button onClick={() => { setEditandoProjetoId(null); setFormEdicao({}); }} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors">
+                                <X size={13} /> Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2">
+                              <button onClick={() => { setEditandoProjetoId(projeto.id); setFormEdicao({...projeto}); }} className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors" title="Editar">
+                                <Edit2 size={15} />
+                              </button>
+                              <button onClick={() => setConfirmandoExclusaoId(projeto.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                      {confirmandoExclusaoId === projeto.id && (
+                        <tr className="bg-red-50">
+                          <td colSpan="5" className="px-6 py-3">
+                            <div className="flex items-center gap-3">
+                              <AlertTriangle size={16} className="text-red-500 shrink-0" />
+                              <span className="text-sm text-red-700 font-medium">Confirma exclusão de <strong>{projeto.numeroContrato} — {projeto.tipo}</strong>? Esta ação não pode ser desfeita.</span>
+                              <button onClick={() => excluirProjeto(projeto.id)} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors">Excluir</button>
+                              <button onClick={() => setConfirmandoExclusaoId(null)} className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors">Cancelar</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))
                 )}
               </tbody>
