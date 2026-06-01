@@ -362,11 +362,7 @@ export default function App() {
 
     // Modo edição: atualiza o projeto existente
     if (modoEdicao && projetoEditandoId) {
-      const dadosAtualizados = {
-        ...novosProjetos[0],
-        id: undefined
-      };
-      delete dadosAtualizados.id;
+      const { id: _id, pesoPorTipo: _ppt, ...dadosAtualizados } = novosProjetos[0];
       try {
         await updateDoc(doc(db, 'projetos', String(projetoEditandoId)), dadosAtualizados);
       } catch (err) {
