@@ -722,17 +722,16 @@ export default function App() {
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
                 <tr>
-                  <th className="px-6 py-4">Contrato / Cliente</th>
-                  <th className="px-6 py-4">Início → Fim</th>
-                  <th className="px-6 py-4">Tipo Estrutura</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Ações</th>
+                  <th className="px-4 py-4">Contrato / Cliente</th>
+                  <th className="px-4 py-4">Início → Fim</th>
+                  <th className="px-4 py-4">Tipo Estrutura</th>
+                  <th className="px-4 py-4">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {meusProjetos.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
+                    <td colSpan="4" className="px-6 py-12 text-center text-slate-500">
                       <CheckCircle2 size={32} className="mx-auto mb-3 text-slate-300" />
                       Nenhum projeto na sua fila no momento!
                     </td>
@@ -754,7 +753,7 @@ export default function App() {
                             </>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-slate-600">
+                        <td className="px-4 py-4 text-slate-600">
                           {editandoProjetoId === projeto.id ? (
                             <div className="flex flex-col gap-1">
                               <input type="date" className="border border-slate-300 rounded px-2 py-1 text-xs" value={formEdicao.dataInicio || ''} onChange={e => setFormEdicao(p => ({...p, dataInicio: e.target.value}))} />
@@ -769,7 +768,7 @@ export default function App() {
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-4">
                           {editandoProjetoId === projeto.id ? (
                             <div className="flex flex-col gap-1">
                               <input className="border border-slate-300 rounded px-2 py-1 text-xs w-48" value={formEdicao.tipo || ''} onChange={e => setFormEdicao(p => ({...p, tipo: e.target.value}))} placeholder="Tipo" />
@@ -784,32 +783,29 @@ export default function App() {
                             </>
                           )}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-4">
                           {editandoProjetoId === projeto.id ? (
-                            <select className="border border-slate-300 rounded px-2 py-1 text-xs" value={formEdicao.status || ''} onChange={e => setFormEdicao(p => ({...p, status: e.target.value}))}>
-                              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          ) : (
-                            renderStatusDropdown(projeto)
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          {editandoProjetoId === projeto.id ? (
-                            <div className="flex gap-2">
-                              <button onClick={() => salvarEdicaoProjeto(projeto.id)} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors">
-                                <Save size={13} /> Salvar
-                              </button>
-                              <button onClick={() => { setEditandoProjetoId(null); setFormEdicao({}); }} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors">
-                                <X size={13} /> Cancelar
-                              </button>
+                            <div className="flex flex-col gap-2">
+                              <select className="border border-slate-300 rounded px-2 py-1 text-xs" value={formEdicao.status || ''} onChange={e => setFormEdicao(p => ({...p, status: e.target.value}))}>
+                                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                              <div className="flex gap-1">
+                                <button onClick={() => salvarEdicaoProjeto(projeto.id)} className="flex items-center gap-1 px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded transition-colors">
+                                  <Save size={12} /> Salvar
+                                </button>
+                                <button onClick={() => { setEditandoProjetoId(null); setFormEdicao({}); }} className="flex items-center gap-1 px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded transition-colors">
+                                  <X size={12} /> Cancelar
+                                </button>
+                              </div>
                             </div>
                           ) : (
-                            <div className="flex gap-2">
-                              <button onClick={() => { setEditandoProjetoId(projeto.id); setFormEdicao({...projeto}); }} className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors" title="Editar">
-                                <Edit2 size={15} />
+                            <div className="flex items-center gap-2">
+                              {renderStatusDropdown(projeto)}
+                              <button onClick={() => { setEditandoProjetoId(projeto.id); setFormEdicao({...projeto}); }} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors shrink-0" title="Editar">
+                                <Edit2 size={14} />
                               </button>
-                              <button onClick={() => setConfirmandoExclusaoId(projeto.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
-                                <Trash2 size={15} />
+                              <button onClick={() => setConfirmandoExclusaoId(projeto.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0" title="Excluir">
+                                <Trash2 size={14} />
                               </button>
                             </div>
                           )}
@@ -817,7 +813,7 @@ export default function App() {
                       </tr>
                       {confirmandoExclusaoId === projeto.id && (
                         <tr className="bg-red-50">
-                          <td colSpan="5" className="px-6 py-3">
+                          <td colSpan="4" className="px-6 py-3">
                             <div className="flex items-center gap-3">
                               <AlertTriangle size={16} className="text-red-500 shrink-0" />
                               <span className="text-sm text-red-700 font-medium">Confirma exclusão de <strong>{projeto.numeroContrato} — {projeto.tipo}</strong>? Esta ação não pode ser desfeita.</span>
