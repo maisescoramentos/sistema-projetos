@@ -382,7 +382,7 @@ export default function App() {
     // Salvar cada projeto no Firestore
     try {
       await Promise.all(novosProjetos.map(p => {
-        const { id, ...dados } = p;
+        const { id, pesoPorTipo, ...dados } = p;
         return addDoc(collection(db, 'projetos'), { ...dados, criadoEm: Date.now() });
       }));
     } catch (err) {
