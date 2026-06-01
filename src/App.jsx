@@ -1,4 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { db } from './firebase';
+import {
+  collection, doc, getDocs, addDoc, setDoc, deleteDoc, updateDoc, onSnapshot, writeBatch
+} from 'firebase/firestore';
 import {
   LayoutDashboard,
   FilePlus,
@@ -106,44 +110,61 @@ export default function App() {
 
   // Sistema de Usuários com ID para permitir renomear com segurança
   const USUARIOS_PADRAO = [
-    { id: 1, nome: 'Fernanda', senha: 'admin', role: 'admin' },
-    { id: 2, nome: 'Samuell', senha: '123', role: 'projetista' },
-    { id: 3, nome: 'Vinicius', senha: '123', role: 'projetista' },
-    { id: 4, nome: 'Victor', senha: '123', role: 'projetista' },
-    { id: 5, nome: 'Valéria', senha: '123', role: 'projetista' }
+    { id: 'u1', nome: 'Fernanda', senha: 'admin', role: 'admin' },
+    { id: 'u2', nome: 'Samuell', senha: '123', role: 'projetista' },
+    { id: 'u3', nome: 'Vinicius', senha: '123', role: 'projetista' },
+    { id: 'u4', nome: 'Victor', senha: '123', role: 'projetista' },
+    { id: 'u5', nome: 'Valéria', senha: '123', role: 'projetista' }
   ];
-  const [usuarios, setUsuarios] = useState(() => {
-    try {
-      const salvo = localStorage.getItem('mp_usuarios');
-      return salvo ? JSON.parse(salvo) : USUARIOS_PADRAO;
-    } catch { return USUARIOS_PADRAO; }
-  });
+  const [usuarios, setUsuarios] = useState([]);
+  const [dbLoading, setDbLoading] = useState(true);
 
   const TIPOS_PADRAO = [
     'FORMA', 'TRAVAMENTO DE PILAR', 'TRAVAMENTO DE VIGAS',
     'ESCORAMENTO DE VIGAS', 'ESCORAMENTOS DE LAJE',
     'REESCORAMENTO 100%', 'REESCORAMENTO 50%', 'DETALHAMENTO'
   ];
-  const [tiposEstrutura, setTiposEstrutura] = useState(() => {
-    try {
-      const salvo = localStorage.getItem('mp_tipos');
-      return salvo ? JSON.parse(salvo) : TIPOS_PADRAO;
-    } catch { return TIPOS_PADRAO; }
-  });
+  const [tiposEstrutura, setTiposEstrutura] = useState([]);
 
   // Estados Gerais
-  const [projetos, setProjetos] = useState(() => {
-    try {
-      const salvo = localStorage.getItem('mp_projetos');
-      return salvo ? JSON.parse(salvo) : MOCK_DATA;
-    } catch { return MOCK_DATA; }
-  });
+  const [projetos, setProjetos] = useState([]);
 
 
-  // --- Persistência em localStorage ---
-  useEffect(() => { localStorage.setItem('mp_usuarios', JSON.stringify(usuarios)); }, [usuarios]);
-  useEffect(() => { localStorage.setItem('mp_tipos', JSON.stringify(tiposEstrutura)); }, [tiposEstrutura]);
-  useEffect(() => { localStorage.setItem('mp_projetos', JSON.stringify(projetos)); }, [projetos]);
+  // --- Firestore: listeners em tempo real ---
+  useEffect(() => {
+    // Usuários
+    const unsubUsuarios = onSnapshot(collection(db, 'usuarios'), async (snap) => {
+      if (snap.empty) {
+        // Primeira vez: seed dos usuários padrão
+        const batch = writeBatch(db);
+        USUARIOS_PADRAO.forEach(u => {
+          batch.set(doc(db, 'usuarios', u.id), u);
+        });
+        await batch.commit();
+      } else {
+        setUsuarios(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+      }
+    });
+
+    // Tipos de estrutura
+    const unsubTipos = onSnapshot(doc(db, 'config', 'tiposEstrutura'), async (snap) => {
+      if (!snap.exists()) {
+        await setDoc(doc(db, 'config', 'tiposEstrutura'), { lista: TIPOS_PADRAO });
+      } else {
+        setTiposEstrutura(snap.data().lista || TIPOS_PADRAO);
+      }
+    });
+
+    // Projetos
+    const unsubProjetos = onSnapshot(collection(db, 'projetos'), (snap) => {
+      const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      lista.sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
+      setProjetos(lista);
+      setDbLoading(false);
+    });
+
+    return () => { unsubUsuarios(); unsubTipos(); unsubProjetos(); };
+  }, []);
 
     // Estados do Formulário Principal (todos os novos campos incluídos)
   const [formData, setFormData] = useState(initialFormData());
@@ -261,7 +282,7 @@ export default function App() {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     // Validação: formato do contrato
@@ -330,7 +351,16 @@ export default function App() {
       };
     });
 
-    setProjetos(prev => [...novosProjetos, ...prev]);
+    // Salvar cada projeto no Firestore
+    try {
+      await Promise.all(novosProjetos.map(p => {
+        const { id, ...dados } = p;
+        return addDoc(collection(db, 'projetos'), { ...dados, criadoEm: Date.now() });
+      }));
+    } catch (err) {
+      alert('Erro ao salvar no banco de dados: ' + err.message);
+      return;
+    }
 
     // Reset preservando o projetista logado (quando for projetista)
     setFormData({
@@ -347,10 +377,10 @@ export default function App() {
   };
 
   // --- Lógica para Mudar o Status de um Projeto ---
-  const handleStatusChange = (idProjeto, novoStatus) => {
-    setProjetos(prevProjetos =>
-      prevProjetos.map(p => p.id === idProjeto ? { ...p, status: novoStatus } : p)
-    );
+  const handleStatusChange = async (idProjeto, novoStatus) => {
+    try {
+      await updateDoc(doc(db, 'projetos', String(idProjeto)), { status: novoStatus });
+    } catch (err) { alert('Erro ao atualizar status: ' + err.message); }
   };
 
   const renderStatusDropdown = (projeto) => (
@@ -464,24 +494,26 @@ export default function App() {
   }, [projetosNoPeriodo]);
 
   // --- Lógica de Configurações (Usuários) ---
-  const adicionarUsuario = (e) => {
+  const adicionarUsuario = async (e) => {
     e.preventDefault();
     if (novoUsuarioNome.trim() && novoUsuarioSenha.trim() && !usuarios.some(u => u.nome === novoUsuarioNome.trim())) {
-      setUsuarios([...usuarios, {
-        id: Date.now(),
-        nome: novoUsuarioNome.trim(),
-        senha: novoUsuarioSenha.trim(),
-        role: novoUsuarioRole
-      }]);
-      setNovoUsuarioNome('');
-      setNovoUsuarioSenha('');
-      setNovoUsuarioRole('projetista');
+      try {
+        const novoDoc = await addDoc(collection(db, 'usuarios'), {
+          nome: novoUsuarioNome.trim(),
+          senha: novoUsuarioSenha.trim(),
+          role: novoUsuarioRole
+        });
+        // onSnapshot já vai atualizar a lista automaticamente
+        setNovoUsuarioNome('');
+        setNovoUsuarioSenha('');
+        setNovoUsuarioRole('projetista');
+      } catch (err) { alert('Erro ao adicionar usuário: ' + err.message); }
     } else {
       alert('Preencha os campos ou escolha um nome de usuário que ainda não exista.');
     }
   };
 
-  const removerUsuario = (id) => {
+  const removerUsuario = async (id) => {
     const user = usuarios.find(u => u.id === id);
     if (user.id === currentUser.id) {
       alert('Você não pode excluir o seu próprio usuário enquanto está logado.');
@@ -495,11 +527,13 @@ export default function App() {
     }
 
     if (window.confirm(`Tem certeza que deseja remover ${user.nome}?`)) {
-      setUsuarios(usuarios.filter(u => u.id !== id));
+      try {
+        await deleteDoc(doc(db, 'usuarios', String(id)));
+      } catch (err) { alert('Erro ao remover usuário: ' + err.message); }
     }
   };
 
-  const salvarEdicaoUsuario = (id) => {
+  const salvarEdicaoUsuario = async (id) => {
     const newNome = editUserNome.trim();
     if (!newNome || !editUserSenha.trim()) {
       alert('O nome e a senha não podem ser vazios.');
@@ -514,36 +548,47 @@ export default function App() {
       return;
     }
 
-    setUsuarios(usuarios.map(u => u.id === id ? { ...u, nome: newNome, senha: editUserSenha.trim(), role: editUserRole } : u));
-
-    if (newNome !== oldNome) {
-      setProjetos(prev => prev.map(p => p.projetista === oldNome ? { ...p, projetista: newNome } : p));
-    }
-
-    if (currentUser.id === id) {
-      setCurrentUser({ id, nome: newNome, senha: editUserSenha.trim(), role: editUserRole });
-    }
-
-    setEditingUserId(null);
+    try {
+      await updateDoc(doc(db, 'usuarios', String(id)), {
+        nome: newNome, senha: editUserSenha.trim(), role: editUserRole
+      });
+      if (newNome !== oldNome) {
+        // Atualiza todos os projetos do usuário renomeado
+        const projetosDoUser = projetos.filter(p => p.projetista === oldNome);
+        await Promise.all(projetosDoUser.map(p =>
+          updateDoc(doc(db, 'projetos', String(p.id)), { projetista: newNome })
+        ));
+      }
+      if (currentUser.id === id) {
+        setCurrentUser({ id, nome: newNome, senha: editUserSenha.trim(), role: editUserRole });
+      }
+      setEditingUserId(null);
+    } catch (err) { alert('Erro ao editar usuário: ' + err.message); }
   };
 
   // --- Lógica de Configurações (Tipos de Estrutura) ---
-  const adicionarTipoEstrutura = (e) => {
+  const adicionarTipoEstrutura = async (e) => {
     e.preventDefault();
     const tipo = novoTipoEstrutura.trim().toUpperCase();
     if (tipo && !tiposEstrutura.includes(tipo)) {
-      setTiposEstrutura([...tiposEstrutura, tipo]);
-      setNovoTipoEstrutura('');
+      try {
+        const novaLista = [...tiposEstrutura, tipo];
+        await setDoc(doc(db, 'config', 'tiposEstrutura'), { lista: novaLista });
+        setNovoTipoEstrutura('');
+      } catch (err) { alert('Erro ao adicionar tipo: ' + err.message); }
     }
   };
 
-  const removerTipoEstrutura = (tipo) => {
+  const removerTipoEstrutura = async (tipo) => {
     if (window.confirm(`Tem certeza que deseja remover o tipo "${tipo}"? Os projetos que já usam esse tipo não serão apagados.`)) {
-      setTiposEstrutura(tiposEstrutura.filter(t => t !== tipo));
+      try {
+        const novaLista = tiposEstrutura.filter(t => t !== tipo);
+        await setDoc(doc(db, 'config', 'tiposEstrutura'), { lista: novaLista });
+      } catch (err) { alert('Erro ao remover tipo: ' + err.message); }
     }
   };
 
-  const salvarEdicaoTipo = (oldTipo) => {
+  const salvarEdicaoTipo = async (oldTipo) => {
     const newTipo = editTipoInput.trim().toUpperCase();
     if (!newTipo) return;
 
@@ -552,11 +597,16 @@ export default function App() {
       return;
     }
 
-    setTiposEstrutura(prev => prev.map(t => t === oldTipo ? newTipo : t));
-
-    if (newTipo !== oldTipo) {
-      setProjetos(prev => prev.map(p => p.tipo === oldTipo ? { ...p, tipo: newTipo } : p));
-    }
+    try {
+      const novaLista = tiposEstrutura.map(t => t === oldTipo ? newTipo : t);
+      await setDoc(doc(db, 'config', 'tiposEstrutura'), { lista: novaLista });
+      if (newTipo !== oldTipo) {
+        const projetosDoTipo = projetos.filter(p => p.tipo === oldTipo);
+        await Promise.all(projetosDoTipo.map(p =>
+          updateDoc(doc(db, 'projetos', String(p.id)), { tipo: newTipo })
+        ));
+      }
+    } catch (err) { alert('Erro ao editar tipo: ' + err.message); }
 
     setEditingTipo(null);
   };
@@ -2199,7 +2249,12 @@ PROJETO_CLIENTE_OPCOES = [
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {!currentUser ? (
+        {dbLoading ? (
+          <div className="flex flex-col items-center justify-center py-32 gap-4">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-slate-500 font-medium">Conectando ao banco de dados...</p>
+          </div>
+        ) : !currentUser ? (
           renderLogin()
         ) : (
           <>
