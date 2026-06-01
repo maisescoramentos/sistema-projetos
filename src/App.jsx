@@ -861,7 +861,7 @@ export default function App() {
                           ) : (
                             <div className="flex items-center gap-2">
                               {renderStatusDropdown(projeto)}
-                              <button onClick={() => { setEditandoProjetoId(projeto.id); setFormEdicao({...projeto}); }} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors shrink-0" title="Editar">
+                              <button onClick={() => abrirEdicaoCompleta(projeto)} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors shrink-0" title="Editar projeto completo">
                                 <Edit2 size={14} />
                               </button>
                               <button onClick={() => setConfirmandoExclusaoId(projeto.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0" title="Excluir">
