@@ -1824,11 +1824,24 @@ export default function App() {
     const isOutroMotivo = formData.motivoRevisao === 'OUTRO MOTIVO';
 
     return (
-      <div className="max-w-3xl mx-auto bg-white p-8 rounded-xl border border-slate-200 shadow-sm animate-in fade-in zoom-in-95 duration-300">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-2">
-          <FilePlus className="text-blue-600" /> Cadastrar Novo Projeto
-        </h2>
-        <p className="text-slate-500 text-sm mb-6">Preencha os dados abaixo para registrar suas frentes de trabalho.</p>
+      <div className="max-w-3xl mx-auto animate-in fade-in zoom-in-95 duration-300">
+
+        {modoEdicao && (
+          <div className="flex items-center justify-between bg-amber-500 text-white rounded-xl px-5 py-3 mb-4 shadow-md">
+            <div className="flex items-center gap-2 font-semibold text-sm">
+              <Edit2 size={17} /> Editando projeto — suas alterações substituirão os dados atuais
+            </div>
+            <button type="button" onClick={() => { setModoEdicao(false); setProjetoEditandoId(null); setFormData({ ...initialFormData(), projetista: currentUser?.role === 'projetista' ? currentUser.nome : '' }); setActiveTab(currentUser?.role === 'admin' ? 'lista' : 'minhas-tarefas'); }} className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors whitespace-nowrap">
+              <X size={15} /> Cancelar e Voltar
+            </button>
+          </div>
+        )}
+
+        <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-2">
+            {modoEdicao ? <><Edit2 className="text-amber-500" size={24}/> Editar Projeto</> : <><FilePlus className="text-blue-600" /> Cadastrar Novo Projeto</>}
+          </h2>
+          <p className="text-slate-500 text-sm mb-6">{modoEdicao ? 'Atualize os dados do projeto abaixo e clique em Salvar Alterações.' : 'Preencha os dados abaixo para registrar suas frentes de trabalho.'}</p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Identificação */}
