@@ -1216,9 +1216,23 @@ export default function App() {
     const fmt = (d) => d ? d.split('-').reverse().join('/') : '—';
     const safe = (v) => (v === undefined || v === null) ? '—' : String(v);
 
+    const novaSecao = (titulo) => {
+      if (y > 150) { doc.addPage(); y = 18; }
+      doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
+      doc.text(titulo, M, y); y += 6;
+    };
+
+    const drawTableHeader = (cols, headers, cor = [30,64,175]) => {
+      const tW = W - M*2;
+      doc.setFillColor(...cor); doc.rect(M, y, tW, 8, 'F');
+      doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
+      let x = M;
+      headers.forEach((h,i) => { doc.text(h, x+2, y+5.5); x += cols[i]; });
+      y += 8;
+    };
+
     // ── Header ──
-    doc.setFillColor(30, 64, 175);
-    doc.rect(0, 0, W, 22, 'F');
+    doc.setFillColor(30, 64, 175); doc.rect(0, 0, W, 22, 'F');
     doc.setTextColor(255,255,255);
     doc.setFontSize(15); doc.setFont('helvetica','bold');
     doc.text('MAIS ESCORAMENTOS', M, 10);
@@ -1233,107 +1247,142 @@ export default function App() {
       ? 'Período: ' + (dashPeriodoInicio ? fmt(dashPeriodoInicio) : 'Início') + ' → ' + (dashPeriodoFim ? fmt(dashPeriodoFim) : 'Hoje')
       : 'Período: Todos os registros';
     const resp = dashFiltroProjetista ? '   |   Responsável: ' + dashFiltroProjetista : '';
-    doc.text(periodo + resp, M, y);
-    y += 8;
+    doc.text(periodo + resp, M, y); y += 8;
 
     // ── KPI Cards ──
-    const emAndamento = stats.total - stats.concluidos - stats.emRevisao;
+    const emAndamento = Math.max(0, stats.total - stats.concluidos - stats.emRevisao);
     const kpis = [
       { label: 'Total de Projetos', value: safe(stats.total), sub: '', cor: [30,64,175], bg: [239,246,255] },
-      { label: 'Concluídos', value: safe(stats.concluidos), sub: stats.total>0 ? Math.round(stats.concluidos/stats.total*100)+'% do total' : '', cor: [22,101,52], bg: [240,253,244] },
-      { label: 'Em Andamento', value: safe(emAndamento), sub: stats.total>0 ? Math.round(emAndamento/stats.total*100)+'% do total' : '', cor: [29,78,216], bg: [239,246,255] },
-      { label: 'Revisão', value: safe(stats.emRevisao), sub: stats.total>0 ? Math.round(stats.emRevisao/stats.total*100)+'% do total' : '', cor: [146,64,14], bg: [255,251,235] },
+      { label: 'Concluídos',        value: safe(stats.concluidos), sub: stats.total>0 ? Math.round(stats.concluidos/stats.total*100)+'% do total' : '', cor: [22,101,52],  bg: [240,253,244] },
+      { label: 'Em Andamento',      value: safe(emAndamento),      sub: stats.total>0 ? Math.round(emAndamento/stats.total*100)+'% do total' : '',    cor: [29,78,216],  bg: [239,246,255] },
+      { label: 'Revisão',           value: safe(stats.emRevisao),  sub: stats.total>0 ? Math.round(stats.emRevisao/stats.total*100)+'% do total' : '', cor: [146,64,14], bg: [255,251,235] },
     ];
     const cW = (W - M*2 - 9) / 4;
     kpis.forEach((k, i) => {
       const x = M + i*(cW+3);
-      doc.setFillColor(...k.bg);
-      doc.roundedRect(x, y, cW, 18, 2, 2, 'F');
+      doc.setFillColor(...k.bg); doc.roundedRect(x, y, cW, 18, 2, 2, 'F');
       doc.setTextColor(100,116,139); doc.setFontSize(7); doc.setFont('helvetica','bold');
       doc.text(k.label.toUpperCase(), x+4, y+5.5);
-      doc.setTextColor(...k.cor); doc.setFontSize(16); doc.setFont('helvetica','bold');
-      doc.text(k.value, x+4, y+14);
+      doc.setTextColor(...k.cor); doc.setFontSize(18); doc.setFont('helvetica','bold');
+      doc.text(k.value, x+4, y+15);
       if (k.sub) {
-        doc.setFontSize(7.5); doc.setFont('helvetica','normal');
-        doc.text(k.sub, x+4+doc.getTextWidth(k.value)+3, y+14);
+        doc.setFontSize(7.5); doc.setFont('helvetica','normal'); doc.setTextColor(...k.cor);
+        doc.text(k.sub, x+4+doc.getTextWidth(k.value)+2, y+15);
       }
     });
     y += 25;
 
-    // ══ Tabela 1: Participação por Responsável ══
-    doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
-    doc.text('PARTICIPAÇÃO E VOLUME POR RESPONSÁVEL', M, y);
-    y += 6;
-
-    // Calcular larguras dinâmicas (landscape = 297mm, útil = 269mm)
-    const tW = W - M*2; // 269
-    const colR = [62, 24, 24, 28, 24, tW - 62-24-24-28-24]; // Resp, Proj, %Total, Concluídos, Revisões, Tipos
-    const headR = ['Responsável','Projetos','% Total','Concluídos','Revisões','Tipos Principais'];
-
-    // Header
-    doc.setFillColor(30,64,175);
-    doc.rect(M, y, tW, 8, 'F');
-    doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
-    let xH = M;
-    headR.forEach((h,i) => { doc.text(h, xH+2, y+5.5); xH+=colR[i]; });
-    y += 8;
-
+    // ══ 1. Participação por Responsável ══
+    novaSecao('PARTICIPAÇÃO E VOLUME POR RESPONSÁVEL');
+    const tW = W - M*2;
+    const colR = [62, 24, 24, 28, 24, tW-62-24-24-28-24];
+    drawTableHeader(colR, ['Responsável','Projetos','% Total','Concluídos','Revisões','Tipos Principais']);
     stats.rankingProjetistas.forEach((proj, idx) => {
-      const bgRow = idx%2===0 ? [248,250,252] : [255,255,255];
-      doc.setFillColor(...bgRow); doc.rect(M, y, tW, 8, 'F');
+      if (y > 185) { doc.addPage(); y = 18; }
+      const bg = idx%2===0?[248,250,252]:[255,255,255];
+      doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
       const tipos = Object.entries(proj.porTipo||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t).join(', ')||'—';
       const vals = [proj.nome, safe(proj.total), proj.percentual+'%', safe(proj.porStatus['Concluído']||0), safe(proj.porStatus['Revisão']||0), tipos];
-      let xR = M;
+      let x = M;
       vals.forEach((v,i) => {
         if(i===3) doc.setTextColor(22,101,52); else if(i===4) doc.setTextColor(146,64,14); else doc.setTextColor(15,23,42);
-        const maxW = colR[i] - 4;
-        const txt = doc.splitTextToSize(v, maxW)[0];
         doc.setFontSize(i===0?9:8.5); doc.setFont('helvetica', idx===0?'bold':'normal');
-        doc.text(txt, xR+2, y+5.5);
-        xR += colR[i];
+        const txt = doc.splitTextToSize(v, colR[i]-4)[0];
+        doc.text(txt, x+2, y+5.5); x += colR[i];
       });
       y += 8;
     });
-
-    // Linha de totais
+    // Totais
     doc.setFillColor(226,232,240); doc.rect(M, y, tW, 8, 'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(9);
     let xT = M;
     ['TOTAL', safe(stats.total), '100%', safe(stats.concluidos), safe(stats.emRevisao), ''].forEach((v,i) => {
       if(i===3) doc.setTextColor(22,101,52); else if(i===4) doc.setTextColor(146,64,14); else doc.setTextColor(15,23,42);
-      doc.text(v, xT+2, y+5.5);
-      xT += colR[i];
+      doc.text(v, xT+2, y+5.5); xT += colR[i];
     });
     y += 14;
 
-    // ══ Tabela 2: Distribuição por Tipo ══
-    if (y > 155) { doc.addPage(); y = 20; }
-    doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
-    doc.text('DISTRIBUIÇÃO POR TIPO DE ESTRUTURA', M, y);
-    y += 6;
-
-    const colT = [110, 28, 28, tW-110-28-28];
-    const headT = ['Tipo de Estrutura','Projetos','% Total','Barra'];
-    doc.setFillColor(30,64,175); doc.rect(M, y, tW, 8, 'F');
-    doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
-    let xHT = M;
-    headT.forEach((h,i) => { doc.text(h, xHT+2, y+5.5); xHT+=colT[i]; });
-    y += 8;
-
-    const barX = M + colT[0]+colT[1]+colT[2];
-    const barMaxW = colT[3] - 6;
+    // ══ 2. Projetos por Tipo × Responsável ══
+    novaSecao('PROJETOS POR TIPO DE ESTRUTURA × RESPONSÁVEL');
+    const projetistas = stats.rankingProjetistas.map(p => p.nome);
+    const tipoColW = 80;
+    const numColW = Math.min(25, (tW - tipoColW - 20 - 16) / Math.max(projetistas.length, 1));
+    const colCruz = [tipoColW, ...projetistas.map(()=>numColW), 20, 16];
+    drawTableHeader(colCruz, ['Tipo de Estrutura', ...projetistas, 'Total', '%']);
     stats.rankingTipos.forEach((t, idx) => {
-      if (y > 185) { doc.addPage(); y = 20; }
-      const bgRow = idx%2===0?[248,250,252]:[255,255,255];
-      doc.setFillColor(...bgRow); doc.rect(M, y, tW, 8, 'F');
-      doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
-      let xR = M;
-      [t.tipo, safe(t.qtd), t.percentual+'%'].forEach((v,i) => { doc.text(v, xR+2, y+5.5); xR+=colT[i]; });
-      // Barra de progresso
-      doc.setFillColor(226,232,240); doc.roundedRect(barX+2, y+2, barMaxW, 4, 1, 1, 'F');
-      doc.setFillColor(30,64,175); doc.roundedRect(barX+2, y+2, Math.max(1,barMaxW*(t.percentual/100)), 4, 1, 1, 'F');
+      if (y > 185) { doc.addPage(); y = 18; }
+      const bg = idx%2===0?[248,250,252]:[255,255,255];
+      doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
+      doc.setTextColor(15,23,42); doc.setFontSize(8); doc.setFont('helvetica','normal');
+      let x = M;
+      doc.text(doc.splitTextToSize(t.tipo, tipoColW-4)[0], x+2, y+5.5); x += tipoColW;
+      projetistas.forEach(nome => {
+        const proj = stats.rankingProjetistas.find(p=>p.nome===nome);
+        const qtd = proj?.porTipo?.[t.tipo] || 0;
+        doc.setTextColor(qtd>0?30:180, qtd>0?64:180, qtd>0?175:180);
+        doc.setFont('helvetica', qtd>0?'bold':'normal');
+        doc.text(qtd>0?safe(qtd):'—', x+2, y+5.5); x += numColW;
+      });
+      doc.setTextColor(15,23,42); doc.setFont('helvetica','bold');
+      doc.text(safe(t.qtd), x+2, y+5.5); x += 20;
+      doc.setFont('helvetica','normal');
+      doc.text(t.percentual+'%', x+2, y+5.5);
       y += 8;
     });
+    // Totais linha
+    if (y > 185) { doc.addPage(); y = 18; }
+    doc.setFillColor(226,232,240); doc.rect(M, y, tW, 8, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(15,23,42);
+    let xC = M;
+    doc.text('TOTAL', xC+2, y+5.5); xC += tipoColW;
+    projetistas.forEach(nome => {
+      const proj = stats.rankingProjetistas.find(p=>p.nome===nome);
+      doc.text(safe(proj?.total||0), xC+2, y+5.5); xC += numColW;
+    });
+    doc.text(safe(stats.total), xC+2, y+5.5); xC += 20;
+    doc.text('100%', xC+2, y+5.5);
+    y += 14;
+
+    // ══ 3. Distribuição por Tipo ══
+    novaSecao('DISTRIBUIÇÃO POR TIPO DE ESTRUTURA');
+    const barMaxW = 60;
+    const colT = [100, 24, 24, barMaxW+10];
+    drawTableHeader(colT, ['Tipo de Estrutura','Projetos','% Total','Distribuição']);
+    stats.rankingTipos.forEach((t, idx) => {
+      if (y > 185) { doc.addPage(); y = 18; }
+      const bg = idx%2===0?[248,250,252]:[255,255,255];
+      doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
+      doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
+      let x = M;
+      doc.text(t.tipo, x+2, y+5.5); x += colT[0];
+      doc.text(safe(t.qtd), x+2, y+5.5); x += colT[1];
+      doc.text(t.percentual+'%', x+2, y+5.5); x += colT[2];
+      doc.setFillColor(226,232,240); doc.roundedRect(x+1, y+2.5, barMaxW, 3.5, 1, 1, 'F');
+      doc.setFillColor(30,64,175); doc.roundedRect(x+1, y+2.5, Math.max(1, barMaxW*(t.percentual/100)), 3.5, 1, 1, 'F');
+      y += 8;
+    });
+    y += 6;
+
+    // ══ 4. Motivos de Revisão ══
+    if (stats.rankingMotivos && stats.rankingMotivos.length > 0) {
+      novaSecao('ANÁLISE DE MOTIVOS DE REVISÃO  (' + stats.totalRevisoes + ' revisões no período)');
+      const colM = [130, 24, 24, tW-130-24-24];
+      drawTableHeader(colM, ['Motivo','Qtd','%','Frequência'], [146,64,14]);
+      stats.rankingMotivos.forEach((m, idx) => {
+        if (y > 185) { doc.addPage(); y = 18; }
+        const bg = idx%2===0?[255,253,247]:[255,255,255];
+        doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
+        doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
+        let x = M;
+        doc.text(doc.splitTextToSize(m.motivo, colM[0]-4)[0], x+2, y+5.5); x += colM[0];
+        doc.text(safe(m.qtd), x+2, y+5.5); x += colM[1];
+        doc.text(m.percentual+'%', x+2, y+5.5); x += colM[2];
+        const bW = colM[3] - 8;
+        doc.setFillColor(226,232,240); doc.roundedRect(x+1, y+2.5, bW, 3.5, 1, 1, 'F');
+        doc.setFillColor(217,119,6); doc.roundedRect(x+1, y+2.5, Math.max(1, bW*(m.percentual/100)), 3.5, 1, 1, 'F');
+        y += 8;
+      });
+    }
 
     // ── Footer ──
     const pages = doc.getNumberOfPages();
