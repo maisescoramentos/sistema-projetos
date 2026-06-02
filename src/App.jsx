@@ -1285,7 +1285,7 @@ export default function App() {
       const vals = [proj.nome, safe(proj.total), proj.percentual+'%', safe(proj.porStatus['Concluído']||0), safe(proj.porStatus['Revisão']||0), tipos];
       let xR = M;
       vals.forEach((v,i) => {
-        doc.setTextColor(i===3?[22,101,52]:i===4?[146,64,14]:[15,23,42]);
+        if(i===3) doc.setTextColor(22,101,52); else if(i===4) doc.setTextColor(146,64,14); else doc.setTextColor(15,23,42);
         const maxW = colR[i] - 4;
         const txt = doc.splitTextToSize(v, maxW)[0];
         doc.setFontSize(i===0?9:8.5); doc.setFont('helvetica', idx===0?'bold':'normal');
@@ -1300,7 +1300,7 @@ export default function App() {
     doc.setFont('helvetica','bold'); doc.setFontSize(9);
     let xT = M;
     ['TOTAL', safe(stats.total), '100%', safe(stats.concluidos), safe(stats.emRevisao), ''].forEach((v,i) => {
-      doc.setTextColor(i===3?[22,101,52]:i===4?[146,64,14]:[15,23,42]);
+      if(i===3) doc.setTextColor(22,101,52); else if(i===4) doc.setTextColor(146,64,14); else doc.setTextColor(15,23,42);
       doc.text(v, xT+2, y+5.5);
       xT += colR[i];
     });
