@@ -1209,138 +1209,143 @@ export default function App() {
   // (9) Dashboard com filtros de período, projetista e status
   // --- Exportar Dashboard em PDF ---
   const exportarDashboardPDF = () => {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const W = 210;
-    const M = 15;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const W = 297; const H = 210; const M = 14;
     let y = 0;
 
     const fmt = (d) => d ? d.split('-').reverse().join('/') : '—';
+    const safe = (v) => (v === undefined || v === null) ? '—' : String(v);
 
     // ── Header ──
     doc.setFillColor(30, 64, 175);
-    doc.rect(0, 0, W, 28, 'F');
+    doc.rect(0, 0, W, 22, 'F');
     doc.setTextColor(255,255,255);
-    doc.setFontSize(16); doc.setFont('helvetica','bold');
-    doc.text('MAIS ESCORAMENTOS', M, 11);
+    doc.setFontSize(15); doc.setFont('helvetica','bold');
+    doc.text('MAIS ESCORAMENTOS', M, 10);
     doc.setFontSize(10); doc.setFont('helvetica','normal');
-    doc.text('Dashboard — Visão Geral da Produção', M, 18);
-    doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}), W-M, 18, {align:'right'});
-    y = 35;
+    doc.text('Dashboard — Visão Geral da Produção', M, 17);
+    doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}), W-M, 17, {align:'right'});
+    y = 30;
 
     // ── Período ──
     doc.setTextColor(71,85,105); doc.setFontSize(9); doc.setFont('helvetica','normal');
     const periodo = (dashPeriodoInicio || dashPeriodoFim)
       ? 'Período: ' + (dashPeriodoInicio ? fmt(dashPeriodoInicio) : 'Início') + ' → ' + (dashPeriodoFim ? fmt(dashPeriodoFim) : 'Hoje')
       : 'Período: Todos os registros';
-    const resp = dashFiltroProjetista ? ' | Responsável: ' + dashFiltroProjetista : '';
+    const resp = dashFiltroProjetista ? '   |   Responsável: ' + dashFiltroProjetista : '';
     doc.text(periodo + resp, M, y);
     y += 8;
 
-    // ── Cards de KPIs ──
-    const cardW = (W - M*2 - 8) / 3;
-    const cards = [
-      { label: 'Total de Projetos', value: String(stats.total), color: [239,246,255], border: [147,197,253], text: [30,64,175] },
-      { label: 'Concluídos', value: stats.total > 0 ? stats.concluidos + ' (' + Math.round(stats.concluidos/stats.total*100) + '%)' : '0', color: [240,253,244], border: [134,239,172], text: [22,101,52] },
-      { label: 'Revisão', value: stats.total > 0 ? stats.emRevisao + ' (' + Math.round(stats.emRevisao/stats.total*100) + '%)' : '0', color: [255,251,235], border: [253,211,77], text: [146,64,14] },
+    // ── KPI Cards ──
+    const emAndamento = stats.total - stats.concluidos - stats.emRevisao;
+    const kpis = [
+      { label: 'Total de Projetos', value: safe(stats.total), sub: '', cor: [30,64,175], bg: [239,246,255] },
+      { label: 'Concluídos', value: safe(stats.concluidos), sub: stats.total>0 ? Math.round(stats.concluidos/stats.total*100)+'% do total' : '', cor: [22,101,52], bg: [240,253,244] },
+      { label: 'Em Andamento', value: safe(emAndamento), sub: stats.total>0 ? Math.round(emAndamento/stats.total*100)+'% do total' : '', cor: [29,78,216], bg: [239,246,255] },
+      { label: 'Revisão', value: safe(stats.emRevisao), sub: stats.total>0 ? Math.round(stats.emRevisao/stats.total*100)+'% do total' : '', cor: [146,64,14], bg: [255,251,235] },
     ];
-    cards.forEach((c, i) => {
-      const x = M + i * (cardW + 4);
-      doc.setFillColor(...c.color);
-      doc.roundedRect(x, y, cardW, 20, 2, 2, 'F');
-      doc.setDrawColor(...c.border);
-      doc.roundedRect(x, y, cardW, 20, 2, 2, 'S');
-      doc.setTextColor(100,116,139); doc.setFontSize(7.5); doc.setFont('helvetica','bold');
-      doc.text(c.label.toUpperCase(), x+4, y+6);
-      doc.setTextColor(...c.text); doc.setFontSize(14); doc.setFont('helvetica','bold');
-      doc.text(c.value, x+4, y+15);
+    const cW = (W - M*2 - 9) / 4;
+    kpis.forEach((k, i) => {
+      const x = M + i*(cW+3);
+      doc.setFillColor(...k.bg);
+      doc.roundedRect(x, y, cW, 18, 2, 2, 'F');
+      doc.setTextColor(100,116,139); doc.setFontSize(7); doc.setFont('helvetica','bold');
+      doc.text(k.label.toUpperCase(), x+4, y+5.5);
+      doc.setTextColor(...k.cor); doc.setFontSize(16); doc.setFont('helvetica','bold');
+      doc.text(k.value, x+4, y+14);
+      if (k.sub) {
+        doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+        doc.text(k.sub, x+4+doc.getTextWidth(k.value)+3, y+14);
+      }
     });
-    y += 27;
+    y += 25;
 
-    // ── Tabela: Participação por Responsável ──
+    // ══ Tabela 1: Participação por Responsável ══
     doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
     doc.text('PARTICIPAÇÃO E VOLUME POR RESPONSÁVEL', M, y);
-    y += 5;
+    y += 6;
 
-    // Header da tabela
-    const cols = [55, 22, 22, 22, 22, 35];
-    const headers = ['Responsável','Projetos','% Total','Concluídos','Revisões','Tipos Principais'];
-    let x = M;
+    // Calcular larguras dinâmicas (landscape = 297mm, útil = 269mm)
+    const tW = W - M*2; // 269
+    const colR = [62, 24, 24, 28, 24, tW - 62-24-24-28-24]; // Resp, Proj, %Total, Concluídos, Revisões, Tipos
+    const headR = ['Responsável','Projetos','% Total','Concluídos','Revisões','Tipos Principais'];
+
+    // Header
     doc.setFillColor(30,64,175);
-    doc.rect(M, y, W-M*2, 8, 'F');
+    doc.rect(M, y, tW, 8, 'F');
     doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
-    headers.forEach((h, i) => { doc.text(h, x+2, y+5.5); x += cols[i]; });
+    let xH = M;
+    headR.forEach((h,i) => { doc.text(h, xH+2, y+5.5); xH+=colR[i]; });
     y += 8;
 
-    // Linhas
     stats.rankingProjetistas.forEach((proj, idx) => {
-      const bg = idx % 2 === 0 ? [248,250,252] : [255,255,255];
-      doc.setFillColor(...bg);
-      doc.rect(M, y, W-M*2, 9, 'F');
-      doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica', idx===0?'bold':'normal');
-      let x = M;
-      const tiposPrincipais = Object.entries(proj.porTipo||{}).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([t])=>t).join(', ') || '—';
-      const vals = [proj.nome, String(proj.total), proj.percentual+'%', String(proj.porStatus['Concluído']||0), String(proj.porStatus['Revisão']||0), tiposPrincipais];
-      vals.forEach((v, i) => {
-        if (i===3) doc.setTextColor(22,101,52);
-        else if (i===4) doc.setTextColor(146,64,14);
-        else doc.setTextColor(15,23,42);
-        doc.text(String(v), x+2, y+6);
-        x += cols[i];
+      const bgRow = idx%2===0 ? [248,250,252] : [255,255,255];
+      doc.setFillColor(...bgRow); doc.rect(M, y, tW, 8, 'F');
+      const tipos = Object.entries(proj.porTipo||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t).join(', ')||'—';
+      const vals = [proj.nome, safe(proj.total), proj.percentual+'%', safe(proj.porStatus['Concluído']||0), safe(proj.porStatus['Revisão']||0), tipos];
+      let xR = M;
+      vals.forEach((v,i) => {
+        doc.setTextColor(i===3?[22,101,52]:i===4?[146,64,14]:[15,23,42]);
+        const maxW = colR[i] - 4;
+        const txt = doc.splitTextToSize(v, maxW)[0];
+        doc.setFontSize(i===0?9:8.5); doc.setFont('helvetica', idx===0?'bold':'normal');
+        doc.text(txt, xR+2, y+5.5);
+        xR += colR[i];
       });
-      y += 9;
-      if (y > 265) { doc.addPage(); y = 20; }
+      y += 8;
     });
 
-    // Totais
-    doc.setFillColor(241,245,249);
-    doc.rect(M, y, W-M*2, 9, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+    // Linha de totais
+    doc.setFillColor(226,232,240); doc.rect(M, y, tW, 8, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(9);
     let xT = M;
-    const totais = ['TOTAL', String(stats.total), '100%', String(stats.concluidos), String(stats.emRevisao), ''];
-    totais.forEach((v,i) => {
-      if(i===3) doc.setTextColor(22,101,52);
-      else if(i===4) doc.setTextColor(146,64,14);
-      else doc.setTextColor(15,23,42);
-      doc.text(v, xT+2, y+6);
-      xT += cols[i];
+    ['TOTAL', safe(stats.total), '100%', safe(stats.concluidos), safe(stats.emRevisao), ''].forEach((v,i) => {
+      doc.setTextColor(i===3?[22,101,52]:i===4?[146,64,14]:[15,23,42]);
+      doc.text(v, xT+2, y+5.5);
+      xT += colR[i];
     });
     y += 14;
 
-    // ── Tabela: Ranking por Tipo ──
-    if (stats.rankingTipos.length > 0) {
-      doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
-      doc.text('DISTRIBUIÇÃO POR TIPO DE ESTRUTURA', M, y);
-      y += 5;
-      const cT = [90, 30, 30];
-      const hT = ['Tipo de Estrutura','Projetos','% Total'];
-      let xH = M;
-      doc.setFillColor(30,64,175); doc.rect(M, y, W-M*2, 8, 'F');
-      doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
-      hT.forEach((h,i)=>{ doc.text(h, xH+2, y+5.5); xH+=cT[i]; });
+    // ══ Tabela 2: Distribuição por Tipo ══
+    if (y > 155) { doc.addPage(); y = 20; }
+    doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
+    doc.text('DISTRIBUIÇÃO POR TIPO DE ESTRUTURA', M, y);
+    y += 6;
+
+    const colT = [110, 28, 28, tW-110-28-28];
+    const headT = ['Tipo de Estrutura','Projetos','% Total','Barra'];
+    doc.setFillColor(30,64,175); doc.rect(M, y, tW, 8, 'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
+    let xHT = M;
+    headT.forEach((h,i) => { doc.text(h, xHT+2, y+5.5); xHT+=colT[i]; });
+    y += 8;
+
+    const barX = M + colT[0]+colT[1]+colT[2];
+    const barMaxW = colT[3] - 6;
+    stats.rankingTipos.forEach((t, idx) => {
+      if (y > 185) { doc.addPage(); y = 20; }
+      const bgRow = idx%2===0?[248,250,252]:[255,255,255];
+      doc.setFillColor(...bgRow); doc.rect(M, y, tW, 8, 'F');
+      doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
+      let xR = M;
+      [t.tipo, safe(t.qtd), t.percentual+'%'].forEach((v,i) => { doc.text(v, xR+2, y+5.5); xR+=colT[i]; });
+      // Barra de progresso
+      doc.setFillColor(226,232,240); doc.roundedRect(barX+2, y+2, barMaxW, 4, 1, 1, 'F');
+      doc.setFillColor(30,64,175); doc.roundedRect(barX+2, y+2, Math.max(1,barMaxW*(t.percentual/100)), 4, 1, 1, 'F');
       y += 8;
-      stats.rankingTipos.forEach((t, idx) => {
-        if (y > 265) { doc.addPage(); y = 20; }
-        const bg = idx%2===0?[248,250,252]:[255,255,255];
-        doc.setFillColor(...bg); doc.rect(M, y, W-M*2, 8, 'F');
-        doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
-        let xR = M;
-        [t.tipo, String(t.qtd), t.percentual+'%'].forEach((v,i)=>{ doc.text(v, xR+2, y+5.5); xR+=cT[i]; });
-        y += 8;
-      });
-      y += 5;
-    }
+    });
 
     // ── Footer ──
     const pages = doc.getNumberOfPages();
-    for (let i = 1; i <= pages; i++) {
+    for (let i=1; i<=pages; i++) {
       doc.setPage(i);
-      doc.setDrawColor(226,232,240); doc.line(M, 285, W-M, 285);
+      doc.setDrawColor(226,232,240); doc.line(M, H-8, W-M, H-8);
       doc.setTextColor(148,163,184); doc.setFontSize(8); doc.setFont('helvetica','normal');
-      doc.text('Mais Escoramentos — Dashboard gerado automaticamente', M, 290);
-      doc.text('Página ' + i + ' de ' + pages, W-M, 290, {align:'right'});
+      doc.text('Mais Escoramentos — Dashboard gerado automaticamente', M, H-4);
+      doc.text('Página '+i+' de '+pages, W-M, H-4, {align:'right'});
     }
 
-    doc.save('Dashboard_MaisEscoramentos_' + new Date().toLocaleDateString('pt-BR').replace(/\//g,'-') + '.pdf');
+    doc.save('Dashboard_MaisEscoramentos_'+new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-')+'.pdf');
   };
 
   const renderDashboard = () => {
