@@ -44,7 +44,7 @@ import {
 const MOCK_DATA = [];
 
 // (6) Status simplificado: apenas Concluído e Revisão
-const STATUS_OPTIONS = ['Concluído', 'Revisão'];
+const STATUS_OPTIONS = ['Concluído', 'Em Andamento', 'Revisão'];
 
 // (6/7) Motivos de revisão padronizados (com opção "Outro motivo" livre)
 const MOTIVOS_REVISAO = [
@@ -416,12 +416,15 @@ export default function App() {
   const renderStatusDropdown = (projeto) => (
     <select
       value={projeto.status}
-      onChange={(e) => handleStatusChange(projeto.id, e.target.value)}
+      onClick={e => e.stopPropagation()}
+      onChange={(e) => { e.stopPropagation(); handleStatusChange(projeto.id, e.target.value); }}
       className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border cursor-pointer outline-none focus:ring-2 focus:ring-blue-500 transition-colors
         ${projeto.status === 'Concluído'
           ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
           : projeto.status === 'Revisão'
           ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+          : projeto.status === 'Em Andamento'
+          ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
           : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'}
       `}
     >
@@ -1117,10 +1120,10 @@ export default function App() {
                           ) : (
                             <div className="flex items-center gap-2">
                               {renderStatusDropdown(projeto)}
-                              <button onClick={() => abrirEdicaoCompleta(projeto)} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors shrink-0" title="Editar projeto completo">
+                              <button onClick={(e) => { e.stopPropagation(); abrirEdicaoCompleta(projeto); }} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors shrink-0" title="Editar projeto completo">
                                 <Edit2 size={14} />
                               </button>
-                              <button onClick={() => setConfirmandoExclusaoId(projeto.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0" title="Excluir">
+                              <button onClick={(e) => { e.stopPropagation(); setConfirmandoExclusaoId(projeto.id); }} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0" title="Excluir">
                                 <Trash2 size={14} />
                               </button>
                             </div>
@@ -1204,6 +1207,142 @@ export default function App() {
   );
 
   // (9) Dashboard com filtros de período, projetista e status
+  // --- Exportar Dashboard em PDF ---
+  const exportarDashboardPDF = () => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const W = 210;
+    const M = 15;
+    let y = 0;
+
+    const fmt = (d) => d ? d.split('-').reverse().join('/') : '—';
+
+    // ── Header ──
+    doc.setFillColor(30, 64, 175);
+    doc.rect(0, 0, W, 28, 'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(16); doc.setFont('helvetica','bold');
+    doc.text('MAIS ESCORAMENTOS', M, 11);
+    doc.setFontSize(10); doc.setFont('helvetica','normal');
+    doc.text('Dashboard — Visão Geral da Produção', M, 18);
+    doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}), W-M, 18, {align:'right'});
+    y = 35;
+
+    // ── Período ──
+    doc.setTextColor(71,85,105); doc.setFontSize(9); doc.setFont('helvetica','normal');
+    const periodo = (dashPeriodoInicio || dashPeriodoFim)
+      ? 'Período: ' + (dashPeriodoInicio ? fmt(dashPeriodoInicio) : 'Início') + ' → ' + (dashPeriodoFim ? fmt(dashPeriodoFim) : 'Hoje')
+      : 'Período: Todos os registros';
+    const resp = dashFiltroProjetista ? ' | Responsável: ' + dashFiltroProjetista : '';
+    doc.text(periodo + resp, M, y);
+    y += 8;
+
+    // ── Cards de KPIs ──
+    const cardW = (W - M*2 - 8) / 3;
+    const cards = [
+      { label: 'Total de Projetos', value: String(stats.total), color: [239,246,255], border: [147,197,253], text: [30,64,175] },
+      { label: 'Concluídos', value: stats.total > 0 ? stats.concluidos + ' (' + Math.round(stats.concluidos/stats.total*100) + '%)' : '0', color: [240,253,244], border: [134,239,172], text: [22,101,52] },
+      { label: 'Revisão', value: stats.total > 0 ? stats.emRevisao + ' (' + Math.round(stats.emRevisao/stats.total*100) + '%)' : '0', color: [255,251,235], border: [253,211,77], text: [146,64,14] },
+    ];
+    cards.forEach((c, i) => {
+      const x = M + i * (cardW + 4);
+      doc.setFillColor(...c.color);
+      doc.roundedRect(x, y, cardW, 20, 2, 2, 'F');
+      doc.setDrawColor(...c.border);
+      doc.roundedRect(x, y, cardW, 20, 2, 2, 'S');
+      doc.setTextColor(100,116,139); doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+      doc.text(c.label.toUpperCase(), x+4, y+6);
+      doc.setTextColor(...c.text); doc.setFontSize(14); doc.setFont('helvetica','bold');
+      doc.text(c.value, x+4, y+15);
+    });
+    y += 27;
+
+    // ── Tabela: Participação por Responsável ──
+    doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
+    doc.text('PARTICIPAÇÃO E VOLUME POR RESPONSÁVEL', M, y);
+    y += 5;
+
+    // Header da tabela
+    const cols = [55, 22, 22, 22, 22, 35];
+    const headers = ['Responsável','Projetos','% Total','Concluídos','Revisões','Tipos Principais'];
+    let x = M;
+    doc.setFillColor(30,64,175);
+    doc.rect(M, y, W-M*2, 8, 'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
+    headers.forEach((h, i) => { doc.text(h, x+2, y+5.5); x += cols[i]; });
+    y += 8;
+
+    // Linhas
+    stats.rankingProjetistas.forEach((proj, idx) => {
+      const bg = idx % 2 === 0 ? [248,250,252] : [255,255,255];
+      doc.setFillColor(...bg);
+      doc.rect(M, y, W-M*2, 9, 'F');
+      doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica', idx===0?'bold':'normal');
+      let x = M;
+      const tiposPrincipais = Object.entries(proj.porTipo||{}).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([t])=>t).join(', ') || '—';
+      const vals = [proj.nome, String(proj.total), proj.percentual+'%', String(proj.porStatus['Concluído']||0), String(proj.porStatus['Revisão']||0), tiposPrincipais];
+      vals.forEach((v, i) => {
+        if (i===3) doc.setTextColor(22,101,52);
+        else if (i===4) doc.setTextColor(146,64,14);
+        else doc.setTextColor(15,23,42);
+        doc.text(String(v), x+2, y+6);
+        x += cols[i];
+      });
+      y += 9;
+      if (y > 265) { doc.addPage(); y = 20; }
+    });
+
+    // Totais
+    doc.setFillColor(241,245,249);
+    doc.rect(M, y, W-M*2, 9, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+    let xT = M;
+    const totais = ['TOTAL', String(stats.total), '100%', String(stats.concluidos), String(stats.emRevisao), ''];
+    totais.forEach((v,i) => {
+      if(i===3) doc.setTextColor(22,101,52);
+      else if(i===4) doc.setTextColor(146,64,14);
+      else doc.setTextColor(15,23,42);
+      doc.text(v, xT+2, y+6);
+      xT += cols[i];
+    });
+    y += 14;
+
+    // ── Tabela: Ranking por Tipo ──
+    if (stats.rankingTipos.length > 0) {
+      doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
+      doc.text('DISTRIBUIÇÃO POR TIPO DE ESTRUTURA', M, y);
+      y += 5;
+      const cT = [90, 30, 30];
+      const hT = ['Tipo de Estrutura','Projetos','% Total'];
+      let xH = M;
+      doc.setFillColor(30,64,175); doc.rect(M, y, W-M*2, 8, 'F');
+      doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
+      hT.forEach((h,i)=>{ doc.text(h, xH+2, y+5.5); xH+=cT[i]; });
+      y += 8;
+      stats.rankingTipos.forEach((t, idx) => {
+        if (y > 265) { doc.addPage(); y = 20; }
+        const bg = idx%2===0?[248,250,252]:[255,255,255];
+        doc.setFillColor(...bg); doc.rect(M, y, W-M*2, 8, 'F');
+        doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
+        let xR = M;
+        [t.tipo, String(t.qtd), t.percentual+'%'].forEach((v,i)=>{ doc.text(v, xR+2, y+5.5); xR+=cT[i]; });
+        y += 8;
+      });
+      y += 5;
+    }
+
+    // ── Footer ──
+    const pages = doc.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226,232,240); doc.line(M, 285, W-M, 285);
+      doc.setTextColor(148,163,184); doc.setFontSize(8); doc.setFont('helvetica','normal');
+      doc.text('Mais Escoramentos — Dashboard gerado automaticamente', M, 290);
+      doc.text('Página ' + i + ' de ' + pages, W-M, 290, {align:'right'});
+    }
+
+    doc.save('Dashboard_MaisEscoramentos_' + new Date().toLocaleDateString('pt-BR').replace(/\//g,'-') + '.pdf');
+  };
+
   const renderDashboard = () => {
     const limparFiltros = () => {
       setDashPeriodoInicio('');
@@ -1230,9 +1369,14 @@ export default function App() {
 
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          <BarChart3 className="text-blue-600" /> Visão Geral da Produção
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <BarChart3 className="text-blue-600" /> Visão Geral da Produção
+          </h2>
+          <button onClick={exportarDashboardPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm">
+            <FileText size={15} /> Exportar PDF
+          </button>
+        </div>
 
         {/* Painel de Filtros */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
@@ -1353,7 +1497,7 @@ export default function App() {
               <AlertCircle size={28} />
             </div>
             <div>
-              <p className="text-sm text-slate-500 font-medium">Em Revisão</p>
+              <p className="text-sm text-slate-500 font-medium">Revisão</p>
               <p className="text-3xl font-bold text-slate-800">{stats.emRevisao}</p>
               {stats.total > 0 && <p className="text-xs text-amber-600 font-semibold mt-0.5">{Math.round((stats.emRevisao / stats.total) * 100)}% do total</p>}
             </div>
