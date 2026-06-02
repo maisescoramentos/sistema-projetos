@@ -2071,81 +2071,133 @@ export default function App() {
 
   const renderList = () => (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="p-6 border-b border-slate-200 bg-slate-50 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-          <ListTodo className="text-blue-600" /> Tabela de Projetos Gerados
-        </h2>
-
-        <div className="flex flex-col sm:flex-row gap-3">
+      {/* Header */}
+      <div className="p-5 border-b border-slate-200 bg-slate-50 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <ListTodo className="text-blue-600" /> Histórico Geral
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">{projetosFiltrados.length} projeto{projetosFiltrados.length !== 1 ? 's' : ''} encontrado{projetosFiltrados.length !== 1 ? 's' : ''}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input type="text" placeholder="Buscar contrato ou cliente..." value={buscaTermo} onChange={(e) => setBuscaTermo(e.target.value)} className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-full sm:w-64" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <input type="text" placeholder="Buscar contrato ou cliente..." value={buscaTermo} onChange={(e) => setBuscaTermo(e.target.value)} className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-56" />
           </div>
-          <select value={filtroProjetista} onChange={(e) => setFiltroProjetista(e.target.value)} className="px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          <select value={filtroProjetista} onChange={(e) => setFiltroProjetista(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             <option value="">Todos Responsáveis</option>
             {usuarios.map(u => <option key={u.id} value={u.nome}>{u.nome}</option>)}
           </select>
-          <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} className="px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             <option value="">Todos Status</option>
             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
       </div>
 
+      {/* Tabela */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm whitespace-nowrap">
-          <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wide font-semibold">
             <tr>
-              <th className="px-6 py-4">Contrato / Cliente</th>
-              <th className="px-6 py-4">Responsável</th>
-              <th className="px-6 py-4">Início → Fim</th>
-              <th className="px-6 py-4">Tipo Estrutura</th>
-              <th className="px-6 py-4">Medidas</th>
-              <th className="px-6 py-4">Status</th>
+              <th className="px-4 py-3">Contrato / Cliente</th>
+              <th className="px-4 py-3">Responsável</th>
+              <th className="px-4 py-3">Período</th>
+              <th className="px-4 py-3">Tipo / Revisão</th>
+              <th className="px-4 py-3">Medidas</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {projetosFiltrados.length === 0 ? (
-              <tr><td colSpan="6" className="px-6 py-12 text-center text-slate-500"><Filter size={32} className="mx-auto mb-3 text-slate-300" />Nenhum projeto encontrado.</td></tr>
+              <tr>
+                <td colSpan="7" className="px-6 py-12 text-center text-slate-400">
+                  <Filter size={28} className="mx-auto mb-2 text-slate-300" />
+                  Nenhum projeto encontrado.
+                </td>
+              </tr>
             ) : (
-              projetosFiltrados.map(projeto => (
-                <tr key={projeto.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="font-semibold text-slate-800">{projeto.numeroContrato}</div>
-                    <div className="text-slate-500 text-xs mt-0.5">{projeto.cliente}</div>
+              projetosFiltrados.map((projeto, idx) => (
+                <tr key={projeto.id} className={`hover:bg-blue-50 transition-colors cursor-pointer ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
+                  onClick={() => setProjetoDetalhe(projeto)}>
+
+                  {/* Contrato / Cliente */}
+                  <td className="px-4 py-3 max-w-[180px]">
+                    <div className="font-semibold text-slate-800 text-sm">{projeto.numeroContrato}</div>
+                    <div className="text-slate-500 text-xs mt-0.5 truncate" title={projeto.cliente}>{projeto.cliente}</div>
                     {projeto.projetoCliente && (
-                      <div className="text-blue-600 text-xs mt-0.5 italic">{projeto.projetoCliente}</div>
+                      <div className="text-blue-500 text-xs mt-0.5 italic truncate">{projeto.projetoCliente}</div>
                     )}
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center bg-slate-100 px-2.5 py-1 rounded-md text-slate-700 font-medium">{projeto.projetista}</span>
+
+                  {/* Responsável */}
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center bg-slate-100 px-2 py-0.5 rounded text-slate-700 text-xs font-medium whitespace-nowrap">{projeto.projetista}</span>
                   </td>
-                  <td className="px-6 py-4 text-slate-600">
-                    <div className="flex items-center gap-2">
-                      <Calendar size={14} className="text-slate-400" />
+
+                  {/* Período */}
+                  <td className="px-4 py-3 text-slate-600 text-xs whitespace-nowrap">
+                    <div className="flex items-center gap-1">
+                      <Calendar size={12} className="text-slate-400 shrink-0" />
                       <span>{projeto.dataInicio ? projeto.dataInicio.split('-').reverse().join('/') : '—'}</span>
-                      <ChevronRight size={14} className="text-slate-300" />
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <ChevronRight size={12} className="text-slate-300 shrink-0" />
                       <span>{projeto.dataFim ? projeto.dataFim.split('-').reverse().join('/') : '—'}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="text-slate-700 font-medium uppercase text-xs">{projeto.tipo}</div>
+
+                  {/* Tipo / Revisão */}
+                  <td className="px-4 py-3 max-w-[160px]">
+                    <div className="text-slate-700 font-semibold text-xs uppercase truncate" title={projeto.tipo}>{projeto.tipo}</div>
                     {projeto.status === 'Revisão' && projeto.numeroRevisao && (
-                      <div className="text-amber-700 text-xs mt-0.5 font-semibold">Rev. #{projeto.numeroRevisao}</div>
+                      <div className="text-amber-600 text-xs mt-0.5 font-bold">Rev. #{projeto.numeroRevisao}</div>
                     )}
-                    {projeto.status === 'Revisão' && projeto.motivoRevisao && (
-                      <div className="text-amber-600 text-xs mt-0.5 italic" title={projeto.motivoRevisao}>
-                        {projeto.motivoRevisao.length > 32 ? projeto.motivoRevisao.slice(0, 32) + '…' : projeto.motivoRevisao}
+                    {projeto.motivoRevisao && (
+                      <div className="text-amber-500 text-xs mt-0.5 italic truncate" title={projeto.motivoRevisao}>{projeto.motivoRevisao}</div>
+                    )}
+                  </td>
+
+                  {/* Medidas */}
+                  <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+                    {projeto.area > 0    && <div><span className="font-medium text-slate-600">{projeto.area}</span> m²</div>}
+                    {projeto.peDireito > 0 && <div>PD: <span className="font-medium text-slate-600">{projeto.peDireito}</span> m</div>}
+                    {projeto.pavimento   && <div className="truncate max-w-[90px]" title={projeto.pavimento}>{projeto.pavimento}</div>}
+                    {projeto.peso > 0    && <div><span className="font-medium text-slate-600">{Number(projeto.peso).toLocaleString('pt-BR')}</span> kg</div>}
+                  </td>
+
+                  {/* Status */}
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    {renderStatusDropdown(projeto)}
+                  </td>
+
+                  {/* Ações */}
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => abrirEdicaoCompleta(projeto)} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
+                        <Edit2 size={14} />
+                      </button>
+                      <button onClick={() => setConfirmandoExclusaoId(projeto.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    {confirmandoExclusaoId === projeto.id && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmandoExclusaoId(null)}>
+                        <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-3 mb-4">
+                            <AlertTriangle size={22} className="text-red-500 shrink-0" />
+                            <p className="text-sm font-semibold text-slate-800">Excluir <strong>{projeto.numeroContrato} — {projeto.tipo}</strong>?</p>
+                          </div>
+                          <p className="text-xs text-slate-500 mb-5">Esta ação não pode ser desfeita.</p>
+                          <div className="flex gap-3 justify-end">
+                            <button onClick={() => setConfirmandoExclusaoId(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg">Cancelar</button>
+                            <button onClick={() => excluirProjeto(projeto.id)} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg">Excluir</button>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-xs text-slate-600">
-                    {projeto.area > 0 && <div>{projeto.area} m²</div>}
-                    {projeto.peDireito > 0 && <div>PD: {projeto.peDireito} m</div>}
-                    {projeto.pavimento > 0 && <div>Pav: {projeto.pavimento} m</div>}
-                    {projeto.peso > 0 && <div>{projeto.peso} kg</div>}
-                  </td>
-                  <td className="px-6 py-4">{renderStatusDropdown(projeto)}</td>
                 </tr>
               ))
             )}
