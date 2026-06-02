@@ -1827,13 +1827,9 @@ export default function App() {
       <div className="max-w-3xl mx-auto animate-in fade-in zoom-in-95 duration-300">
 
         {modoEdicao && (
-          <div className="flex items-center justify-between bg-amber-500 text-white rounded-xl px-5 py-3 mb-4 shadow-md">
-            <div className="flex items-center gap-2 font-semibold text-sm">
-              <Edit2 size={17} /> Editando projeto — suas alterações substituirão os dados atuais
-            </div>
-            <button type="button" onClick={() => { setModoEdicao(false); setProjetoEditandoId(null); setFormData({ ...initialFormData(), projetista: currentUser?.role === 'projetista' ? currentUser.nome : '' }); setActiveTab(currentUser?.role === 'admin' ? 'lista' : 'minhas-tarefas'); }} className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors whitespace-nowrap">
-              <X size={15} /> Cancelar e Voltar
-            </button>
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 rounded-xl px-5 py-3 mb-4">
+            <Edit2 size={16} className="shrink-0" />
+            <span className="font-semibold text-sm">Modo edição — suas alterações substituirão os dados atuais do projeto.</span>
           </div>
         )}
 
@@ -2072,8 +2068,17 @@ export default function App() {
             <textarea name="notas" value={formData.notas} onChange={handleInputChange} rows="2" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none" placeholder="Informações adicionais para a gestão..."></textarea>
           </div>
 
-          <div className="pt-4 border-t border-slate-200 flex justify-end">
-            <button type="submit" className="w-full sm:w-auto bg-blue-800 hover:bg-blue-900 text-white font-medium py-3 px-8 rounded-lg shadow-md transition-colors flex items-center justify-center gap-2 text-lg">
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
+            {modoEdicao && (
+              <button
+                type="button"
+                onClick={() => { setModoEdicao(false); setProjetoEditandoId(null); setFormData({ ...initialFormData(), projetista: currentUser?.role === 'projetista' ? currentUser.nome : '' }); setActiveTab(currentUser?.role === 'admin' ? 'lista' : 'minhas-tarefas'); }}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg transition-colors text-base"
+              >
+                <X size={18} /> Cancelar e Voltar
+              </button>
+            )}
+            <button type="submit" className="flex items-center justify-center gap-2 px-8 py-3 bg-blue-800 hover:bg-blue-900 text-white font-medium rounded-lg shadow-md transition-colors text-lg">
               <Save size={22} /> {modoEdicao ? 'Salvar Alterações' : 'Salvar Formulário'}
             </button>
           </div>
