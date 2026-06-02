@@ -1210,107 +1210,152 @@ export default function App() {
   // --- Exportar Dashboard em PDF ---
   const exportarDashboardPDF = () => {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const W = 297; const H = 210; const M = 14;
+    const W = 297; const PH = 210; const M = 14; const tW = W - M * 2; // 269
     let y = 0;
+    let pageNum = 1;
 
-    const fmt = (d) => d ? d.split('-').reverse().join('/') : '—';
+    const fmt  = (d) => d ? d.split('-').reverse().join('/') : '—';
     const safe = (v) => (v === undefined || v === null) ? '—' : String(v);
 
-    const novaSecao = (titulo) => {
-      if (y > 150) { doc.addPage(); y = 18; }
-      doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
-      doc.text(titulo, M, y); y += 6;
+    const addPage = () => {
+      doc.addPage(); pageNum++; y = 18;
     };
 
-    const drawTableHeader = (cols, headers, cor = [30,64,175]) => {
-      const tW = W - M*2;
-      doc.setFillColor(...cor); doc.rect(M, y, tW, 8, 'F');
+    const checkY = (needed) => { if (y + needed > 190) addPage(); };
+
+    const sectionTitle = (txt) => {
+      checkY(20);
+      doc.setDrawColor(226,232,240);
+      doc.line(M, y, W - M, y);
+      y += 5;
+      doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
+      doc.text(txt, M, y); y += 7;
+    };
+
+    const tableHeader = (cols, headers, bgR=30, bgG=64, bgB=175) => {
+      checkY(8);
+      doc.setFillColor(bgR,bgG,bgB); doc.rect(M, y, tW, 8, 'F');
       doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
       let x = M;
       headers.forEach((h,i) => { doc.text(h, x+2, y+5.5); x += cols[i]; });
       y += 8;
     };
 
-    // ── Header ──
-    doc.setFillColor(30, 64, 175); doc.rect(0, 0, W, 22, 'F');
+    const tableRow = (cols, vals, opts = {}) => {
+      checkY(8);
+      const bg = opts.bg || [255,255,255];
+      doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
+      let x = M;
+      vals.forEach((cell, i) => {
+        const color = cell.color || [15,23,42];
+        const bold  = cell.bold  || false;
+        doc.setTextColor(...color);
+        doc.setFontSize(cell.size || 8.5);
+        doc.setFont('helvetica', bold ? 'bold' : 'normal');
+        const txt = doc.splitTextToSize(cell.v, cols[i] - 4)[0] || '';
+        doc.text(txt, x + 2, y + 5.5);
+        x += cols[i];
+      });
+      y += 8;
+    };
+
+    // ════════════════════════════════
+    // HEADER
+    // ════════════════════════════════
+    doc.setFillColor(30,64,175); doc.rect(0,0,W,22,'F');
     doc.setTextColor(255,255,255);
-    doc.setFontSize(15); doc.setFont('helvetica','bold');
+    doc.setFontSize(16); doc.setFont('helvetica','bold');
     doc.text('MAIS ESCORAMENTOS', M, 10);
     doc.setFontSize(10); doc.setFont('helvetica','normal');
     doc.text('Dashboard — Visão Geral da Produção', M, 17);
-    doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}), W-M, 17, {align:'right'});
+    const agora = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    doc.text('Gerado em: ' + agora, W - M, 17, {align:'right'});
     y = 30;
 
-    // ── Período ──
+    // Período
     doc.setTextColor(71,85,105); doc.setFontSize(9); doc.setFont('helvetica','normal');
     const periodo = (dashPeriodoInicio || dashPeriodoFim)
       ? 'Período: ' + (dashPeriodoInicio ? fmt(dashPeriodoInicio) : 'Início') + ' → ' + (dashPeriodoFim ? fmt(dashPeriodoFim) : 'Hoje')
       : 'Período: Todos os registros';
-    const resp = dashFiltroProjetista ? '   |   Responsável: ' + dashFiltroProjetista : '';
-    doc.text(periodo + resp, M, y); y += 8;
+    const filtResp = dashFiltroProjetista ? '   |   Responsável: ' + dashFiltroProjetista : '';
+    doc.text(periodo + filtResp, M, y); y += 9;
 
-    // ── KPI Cards ──
+    // ════════════════════════════════
+    // KPI CARDS
+    // ════════════════════════════════
     const emAndamento = Math.max(0, stats.total - stats.concluidos - stats.emRevisao);
+    const pct = (n) => stats.total > 0 ? Math.round(n / stats.total * 100) + '%' : '0%';
     const kpis = [
-      { label: 'Total de Projetos', value: safe(stats.total), sub: '', cor: [30,64,175], bg: [239,246,255] },
-      { label: 'Concluídos',        value: safe(stats.concluidos), sub: stats.total>0 ? Math.round(stats.concluidos/stats.total*100)+'% do total' : '', cor: [22,101,52],  bg: [240,253,244] },
-      { label: 'Em Andamento',      value: safe(emAndamento),      sub: stats.total>0 ? Math.round(emAndamento/stats.total*100)+'% do total' : '',    cor: [29,78,216],  bg: [239,246,255] },
-      { label: 'Revisão',           value: safe(stats.emRevisao),  sub: stats.total>0 ? Math.round(stats.emRevisao/stats.total*100)+'% do total' : '', cor: [146,64,14], bg: [255,251,235] },
+      { label:'TOTAL DE PROJETOS', value:safe(stats.total),      sub:'',                    cor:[30,64,175],  bg:[239,246,255] },
+      { label:'CONCLUÍDOS',        value:safe(stats.concluidos), sub:pct(stats.concluidos), cor:[22,101,52],  bg:[240,253,244] },
+      { label:'EM ANDAMENTO',      value:safe(emAndamento),      sub:pct(emAndamento),      cor:[29,78,216],  bg:[219,234,254] },
+      { label:'REVISÃO',           value:safe(stats.emRevisao),  sub:pct(stats.emRevisao),  cor:[146,64,14],  bg:[255,251,235] },
     ];
-    const cW = (W - M*2 - 9) / 4;
+    const cW = (tW - 9) / 4;
     kpis.forEach((k, i) => {
       const x = M + i*(cW+3);
-      doc.setFillColor(...k.bg); doc.roundedRect(x, y, cW, 18, 2, 2, 'F');
+      doc.setFillColor(...k.bg); doc.roundedRect(x, y, cW, 20, 2, 2, 'F');
+      // label
       doc.setTextColor(100,116,139); doc.setFontSize(7); doc.setFont('helvetica','bold');
-      doc.text(k.label.toUpperCase(), x+4, y+5.5);
-      doc.setTextColor(...k.cor); doc.setFontSize(18); doc.setFont('helvetica','bold');
-      doc.text(k.value, x+4, y+15);
+      doc.text(k.label, x+4, y+6);
+      // value
+      doc.setTextColor(...k.cor); doc.setFontSize(20); doc.setFont('helvetica','bold');
+      doc.text(k.value, x+4, y+15.5);
+      // sub (% — on same line, smaller)
       if (k.sub) {
-        doc.setFontSize(7.5); doc.setFont('helvetica','normal'); doc.setTextColor(...k.cor);
-        doc.text(k.sub, x+4+doc.getTextWidth(k.value)+2, y+15);
+        const vw = doc.getTextWidth(k.value);
+        doc.setFontSize(8); doc.setFont('helvetica','normal');
+        doc.text(k.sub + ' do total', x + 6 + vw, y + 15.5);
       }
     });
-    y += 25;
+    y += 28;
 
-    // ══ 1. Participação por Responsável ══
-    novaSecao('PARTICIPAÇÃO E VOLUME POR RESPONSÁVEL');
-    const tW = W - M*2;
-    const colR = [62, 24, 24, 28, 24, tW-62-24-24-28-24];
-    drawTableHeader(colR, ['Responsável','Projetos','% Total','Concluídos','Revisões','Tipos Principais']);
+    // ════════════════════════════════
+    // 1. PARTICIPAÇÃO POR RESPONSÁVEL
+    // ════════════════════════════════
+    sectionTitle('1. PARTICIPAÇÃO E VOLUME POR RESPONSÁVEL');
+    const colR = [65, 24, 24, 28, 24, tW-65-24-24-28-24];
+    tableHeader(colR, ['Responsável','Projetos','% Total','Concluídos','Revisões','Tipos Principais']);
     stats.rankingProjetistas.forEach((proj, idx) => {
-      if (y > 185) { doc.addPage(); y = 18; }
-      const bg = idx%2===0?[248,250,252]:[255,255,255];
-      doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
-      const tipos = Object.entries(proj.porTipo||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t).join(', ')||'—';
-      const vals = [proj.nome, safe(proj.total), proj.percentual+'%', safe(proj.porStatus['Concluído']||0), safe(proj.porStatus['Revisão']||0), tipos];
-      let x = M;
-      vals.forEach((v,i) => {
-        if(i===3) doc.setTextColor(22,101,52); else if(i===4) doc.setTextColor(146,64,14); else doc.setTextColor(15,23,42);
-        doc.setFontSize(i===0?9:8.5); doc.setFont('helvetica', idx===0?'bold':'normal');
-        const txt = doc.splitTextToSize(v, colR[i]-4)[0];
-        doc.text(txt, x+2, y+5.5); x += colR[i];
-      });
-      y += 8;
+      const tipos = Object.entries(proj.porTipo||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t).join(', ') || '—';
+      tableRow(colR, [
+        {v:proj.nome,                               bold:idx===0},
+        {v:safe(proj.total),                        bold:idx===0},
+        {v:proj.percentual+'%'},
+        {v:safe(proj.porStatus['Concluído']||0),    color:[22,101,52],  bold:true},
+        {v:safe(proj.porStatus['Revisão']||0),      color:[146,64,14],  bold:true},
+        {v:tipos,                                   size:7.5},
+      ], {bg: idx%2===0?[248,250,252]:[255,255,255]});
     });
-    // Totais
+    // totais
+    checkY(8);
     doc.setFillColor(226,232,240); doc.rect(M, y, tW, 8, 'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(9);
     let xT = M;
-    ['TOTAL', safe(stats.total), '100%', safe(stats.concluidos), safe(stats.emRevisao), ''].forEach((v,i) => {
-      if(i===3) doc.setTextColor(22,101,52); else if(i===4) doc.setTextColor(146,64,14); else doc.setTextColor(15,23,42);
-      doc.text(v, xT+2, y+5.5); xT += colR[i];
+    [
+      {v:'TOTAL',               color:[15,23,42]},
+      {v:safe(stats.total),     color:[15,23,42]},
+      {v:'100%',                color:[15,23,42]},
+      {v:safe(stats.concluidos),color:[22,101,52]},
+      {v:safe(stats.emRevisao), color:[146,64,14]},
+      {v:'',                    color:[15,23,42]},
+    ].forEach((c,i) => {
+      doc.setTextColor(...c.color); doc.text(c.v, xT+2, y+5.5); xT += colR[i];
     });
     y += 14;
 
-    // ══ 2. Projetos por Tipo × Responsável ══
-    novaSecao('PROJETOS POR TIPO DE ESTRUTURA × RESPONSÁVEL');
+    // ════════════════════════════════
+    // 2. TIPO × RESPONSÁVEL
+    // ════════════════════════════════
+    sectionTitle('2. PROJETOS POR TIPO DE ESTRUTURA × RESPONSÁVEL');
     const projetistas = stats.rankingProjetistas.map(p => p.nome);
-    const tipoColW = 80;
-    const numColW = Math.min(25, (tW - tipoColW - 20 - 16) / Math.max(projetistas.length, 1));
-    const colCruz = [tipoColW, ...projetistas.map(()=>numColW), 20, 16];
-    drawTableHeader(colCruz, ['Tipo de Estrutura', ...projetistas, 'Total', '%']);
+    const tipoColW = 85;
+    const availW   = tW - tipoColW - 22 - 18;
+    const numCW    = Math.floor(availW / Math.max(projetistas.length, 1));
+    const colCruz  = [tipoColW, ...projetistas.map(()=>numCW), 22, 18];
+    tableHeader(colCruz, ['Tipo de Estrutura', ...projetistas, 'Total', '%']);
     stats.rankingTipos.forEach((t, idx) => {
-      if (y > 185) { doc.addPage(); y = 18; }
+      checkY(8);
       const bg = idx%2===0?[248,250,252]:[255,255,255];
       doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
       doc.setTextColor(15,23,42); doc.setFontSize(8); doc.setFont('helvetica','normal');
@@ -1318,83 +1363,104 @@ export default function App() {
       doc.text(doc.splitTextToSize(t.tipo, tipoColW-4)[0], x+2, y+5.5); x += tipoColW;
       projetistas.forEach(nome => {
         const proj = stats.rankingProjetistas.find(p=>p.nome===nome);
-        const qtd = proj?.porTipo?.[t.tipo] || 0;
-        doc.setTextColor(qtd>0?30:180, qtd>0?64:180, qtd>0?175:180);
-        doc.setFont('helvetica', qtd>0?'bold':'normal');
-        doc.text(qtd>0?safe(qtd):'—', x+2, y+5.5); x += numColW;
+        const qtd  = proj?.porTipo?.[t.tipo] || 0;
+        if (qtd > 0) {
+          doc.setTextColor(30,64,175); doc.setFont('helvetica','bold');
+          doc.text(safe(qtd), x+2, y+5.5);
+        } else {
+          doc.setTextColor(180,180,180); doc.setFont('helvetica','normal');
+          doc.text('—', x+2, y+5.5);
+        }
+        x += numCW;
       });
       doc.setTextColor(15,23,42); doc.setFont('helvetica','bold');
-      doc.text(safe(t.qtd), x+2, y+5.5); x += 20;
+      doc.text(safe(t.qtd), x+2, y+5.5); x += 22;
       doc.setFont('helvetica','normal');
       doc.text(t.percentual+'%', x+2, y+5.5);
       y += 8;
     });
-    // Totais linha
-    if (y > 185) { doc.addPage(); y = 18; }
+    // totais
+    checkY(8);
     doc.setFillColor(226,232,240); doc.rect(M, y, tW, 8, 'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(15,23,42);
     let xC = M;
     doc.text('TOTAL', xC+2, y+5.5); xC += tipoColW;
     projetistas.forEach(nome => {
       const proj = stats.rankingProjetistas.find(p=>p.nome===nome);
-      doc.text(safe(proj?.total||0), xC+2, y+5.5); xC += numColW;
+      doc.text(safe(proj?.total||0), xC+2, y+5.5); xC += numCW;
     });
-    doc.text(safe(stats.total), xC+2, y+5.5); xC += 20;
+    doc.text(safe(stats.total), xC+2, y+5.5); xC += 22;
     doc.text('100%', xC+2, y+5.5);
     y += 14;
 
-    // ══ 3. Distribuição por Tipo ══
-    novaSecao('DISTRIBUIÇÃO POR TIPO DE ESTRUTURA');
-    const barMaxW = 60;
-    const colT = [100, 24, 24, barMaxW+10];
-    drawTableHeader(colT, ['Tipo de Estrutura','Projetos','% Total','Distribuição']);
+    // ════════════════════════════════
+    // 3. DISTRIBUIÇÃO POR TIPO
+    // ════════════════════════════════
+    sectionTitle('3. DISTRIBUIÇÃO POR TIPO DE ESTRUTURA');
+    const barAreaW = tW - 105 - 26 - 26;
+    const colD = [105, 26, 26, barAreaW];
+    tableHeader(colD, ['Tipo de Estrutura','Projetos','% Total','Distribuição Visual']);
     stats.rankingTipos.forEach((t, idx) => {
-      if (y > 185) { doc.addPage(); y = 18; }
+      checkY(8);
       const bg = idx%2===0?[248,250,252]:[255,255,255];
       doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
       doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
       let x = M;
-      doc.text(t.tipo, x+2, y+5.5); x += colT[0];
-      doc.text(safe(t.qtd), x+2, y+5.5); x += colT[1];
-      doc.text(t.percentual+'%', x+2, y+5.5); x += colT[2];
-      doc.setFillColor(226,232,240); doc.roundedRect(x+1, y+2.5, barMaxW, 3.5, 1, 1, 'F');
-      doc.setFillColor(30,64,175); doc.roundedRect(x+1, y+2.5, Math.max(1, barMaxW*(t.percentual/100)), 3.5, 1, 1, 'F');
+      doc.text(t.tipo, x+2, y+5.5); x += colD[0];
+      doc.text(safe(t.qtd), x+2, y+5.5); x += colD[1];
+      doc.text(t.percentual+'%', x+2, y+5.5); x += colD[2];
+      // barra
+      const bW = barAreaW - 6;
+      doc.setFillColor(220,230,240); doc.roundedRect(x+1, y+2.5, bW, 3.5, 1, 1, 'F');
+      const fill = Math.max(2, bW * (t.percentual / 100));
+      doc.setFillColor(30,64,175); doc.roundedRect(x+1, y+2.5, fill, 3.5, 1, 1, 'F');
+      // % dentro da barra
+      doc.setTextColor(255,255,255); doc.setFontSize(6); doc.setFont('helvetica','bold');
+      if (fill > 12) doc.text(t.percentual+'%', x+3, y+5.2);
       y += 8;
     });
     y += 6;
 
-    // ══ 4. Motivos de Revisão ══
+    // ════════════════════════════════
+    // 4. MOTIVOS DE REVISÃO
+    // ════════════════════════════════
     if (stats.rankingMotivos && stats.rankingMotivos.length > 0) {
-      novaSecao('ANÁLISE DE MOTIVOS DE REVISÃO  (' + stats.totalRevisoes + ' revisões no período)');
-      const colM = [130, 24, 24, tW-130-24-24];
-      drawTableHeader(colM, ['Motivo','Qtd','%','Frequência'], [146,64,14]);
+      sectionTitle('4. ANÁLISE DE MOTIVOS DE REVISÃO  (' + safe(stats.totalRevisoes) + ' revisões no período)');
+      const bMW = tW - 130 - 24 - 24;
+      const colMot = [130, 24, 24, bMW];
+      tableHeader(colMot, ['Motivo','Qtd','%','Frequência'], 146, 64, 14);
       stats.rankingMotivos.forEach((m, idx) => {
-        if (y > 185) { doc.addPage(); y = 18; }
+        checkY(8);
         const bg = idx%2===0?[255,253,247]:[255,255,255];
         doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
         doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
         let x = M;
-        doc.text(doc.splitTextToSize(m.motivo, colM[0]-4)[0], x+2, y+5.5); x += colM[0];
-        doc.text(safe(m.qtd), x+2, y+5.5); x += colM[1];
-        doc.text(m.percentual+'%', x+2, y+5.5); x += colM[2];
-        const bW = colM[3] - 8;
-        doc.setFillColor(226,232,240); doc.roundedRect(x+1, y+2.5, bW, 3.5, 1, 1, 'F');
-        doc.setFillColor(217,119,6); doc.roundedRect(x+1, y+2.5, Math.max(1, bW*(m.percentual/100)), 3.5, 1, 1, 'F');
+        doc.text(doc.splitTextToSize(m.motivo, colMot[0]-4)[0], x+2, y+5.5); x += colMot[0];
+        doc.setTextColor(146,64,14); doc.setFont('helvetica','bold');
+        doc.text(safe(m.qtd), x+2, y+5.5); x += colMot[1];
+        doc.text(m.percentual+'%', x+2, y+5.5); x += colMot[2];
+        const bW = bMW - 6;
+        doc.setFillColor(254,230,190); doc.roundedRect(x+1, y+2.5, bW, 3.5, 1, 1, 'F');
+        const fill = Math.max(2, bW * (m.percentual / 100));
+        doc.setFillColor(217,119,6); doc.roundedRect(x+1, y+2.5, fill, 3.5, 1, 1, 'F');
+        if (fill > 12) { doc.setTextColor(255,255,255); doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.text(m.percentual+'%', x+3, y+5.2); }
         y += 8;
       });
     }
 
-    // ── Footer ──
-    const pages = doc.getNumberOfPages();
-    for (let i=1; i<=pages; i++) {
+    // ════════════════════════════════
+    // FOOTER em todas as páginas
+    // ════════════════════════════════
+    const totalPages = doc.getNumberOfPages();
+    for (let i=1; i<=totalPages; i++) {
       doc.setPage(i);
-      doc.setDrawColor(226,232,240); doc.line(M, H-8, W-M, H-8);
-      doc.setTextColor(148,163,184); doc.setFontSize(8); doc.setFont('helvetica','normal');
-      doc.text('Mais Escoramentos — Dashboard gerado automaticamente', M, H-4);
-      doc.text('Página '+i+' de '+pages, W-M, H-4, {align:'right'});
+      doc.setFillColor(30,64,175); doc.rect(0, PH-10, W, 10, 'F');
+      doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','normal');
+      doc.text('Mais Escoramentos — Dashboard gerado automaticamente', M, PH-4);
+      doc.text('Página ' + i + ' de ' + totalPages, W-M, PH-4, {align:'right'});
     }
 
-    doc.save('Dashboard_MaisEscoramentos_'+new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-')+'.pdf');
+    doc.save('Dashboard_MaisEscoramentos_' + new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-') + '.pdf');
   };
 
   const renderDashboard = () => {
