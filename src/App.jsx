@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from './firebase';
+import jsPDF from 'jspdf';
 import {
   collection, doc, getDocs, addDoc, setDoc, deleteDoc, updateDoc, onSnapshot, writeBatch
 } from 'firebase/firestore';
@@ -760,6 +761,164 @@ export default function App() {
     } catch (err) { alert('Erro ao salvar edição: ' + err.message); }
   };
 
+  // --- Exportar Projeto em PDF ---
+  const exportarPDF = (p) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const W = 210;
+    const margin = 15;
+    const col2 = W / 2 + 5;
+    let y = 0;
+
+    const fmt = (d) => d ? d.split('-').reverse().join('/') : '—';
+    const num = (v) => v ? Number(v).toLocaleString('pt-BR') : '—';
+
+    // ── Header azul ──
+    doc.setFillColor(30, 64, 175);
+    doc.rect(0, 0, W, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MAIS ESCORAMENTOS', margin, 11);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Controle de Projetos', margin, 18);
+    doc.setFontSize(10);
+    doc.text('Gerado em: ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}), W - margin, 18, { align: 'right' });
+    y = 36;
+
+    // ── Título do projeto ──
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Contrato ' + (p.numeroContrato || '—'), margin, y);
+    y += 7;
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(p.cliente || '—', margin, y);
+    y += 5;
+
+    // Status badge
+    const statusColor = p.status === 'Concluído' ? [22, 163, 74] : [217, 119, 6];
+    doc.setFillColor(...statusColor);
+    doc.roundedRect(margin, y, 38, 7, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(p.status + (p.numeroRevisao ? '  Rev.#' + p.numeroRevisao : ''), margin + 19, y + 4.8, { align: 'center' });
+    y += 13;
+
+    // ── Linha divisória ──
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, y, W - margin, y);
+    y += 7;
+
+    // ── Helper: bloco de campo ──
+    const campo = (label, valor, x, yy, w = 85) => {
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(x, yy, w, 14, 2, 2, 'F');
+      doc.setTextColor(148, 163, 184);
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text(label.toUpperCase(), x + 4, yy + 5);
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text(String(valor || '—'), x + 4, yy + 11);
+    };
+
+    // ── Seção: Informações Gerais ──
+    doc.setTextColor(30, 64, 175);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('INFORMAÇÕES GERAIS', margin, y);
+    y += 5;
+
+    campo('Projetista', p.projetista, margin, y);
+    campo('Tipo de Estrutura', p.tipo, col2, y);
+    y += 17;
+    campo('Data Início', fmt(p.dataInicio), margin, y);
+    campo('Data Fim', fmt(p.dataFim), col2, y);
+    y += 17;
+
+    // ── Seção: Dados Técnicos ──
+    doc.setTextColor(30, 64, 175);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DADOS TÉCNICOS', margin, y);
+    y += 5;
+
+    campo('Área (m²)', p.area ? num(p.area) + ' m²' : '—', margin, y);
+    campo('Pé Direito (m)', p.peDireito ? num(p.peDireito) + ' m' : '—', col2, y);
+    y += 17;
+    campo('Pavimento', p.pavimento, margin, y);
+    campo('Peso Total (kg)', p.peso ? num(p.peso) + ' kg' : '—', col2, y);
+    y += 17;
+
+    // ── Projeto do Cliente ──
+    if (p.projetoCliente) {
+      doc.setTextColor(30, 64, 175);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PROJETO DO CLIENTE', margin, y);
+      y += 5;
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin, y, W - margin * 2, 12, 2, 2, 'F');
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(p.projetoCliente, margin + 4, y + 7.5);
+      y += 17;
+    }
+
+    // ── Motivo Revisão ──
+    if (p.motivoRevisao) {
+      doc.setFillColor(255, 251, 235);
+      doc.roundedRect(margin, y, W - margin * 2, 14, 2, 2, 'F');
+      doc.setDrawColor(251, 191, 36);
+      doc.roundedRect(margin, y, W - margin * 2, 14, 2, 2, 'S');
+      doc.setTextColor(180, 83, 9);
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text('MOTIVO DA REVISÃO', margin + 4, y + 5);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(p.motivoRevisao, margin + 4, y + 11);
+      y += 18;
+    }
+
+    // ── Observações ──
+    if (p.notas) {
+      doc.setTextColor(30, 64, 175);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('OBSERVAÇÕES', margin, y);
+      y += 5;
+      doc.setFillColor(239, 246, 255);
+      const linhas = doc.splitTextToSize(p.notas, W - margin * 2 - 8);
+      const hNotas = linhas.length * 5 + 8;
+      doc.roundedRect(margin, y, W - margin * 2, hNotas, 2, 2, 'F');
+      doc.setTextColor(30, 58, 138);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(linhas, margin + 4, y + 6);
+      y += hNotas + 5;
+    }
+
+    // ── Footer ──
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, 280, W - margin, 280);
+    doc.setTextColor(148, 163, 184);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Mais Escoramentos — Documento gerado automaticamente', margin, 285);
+    doc.text('Página 1 de 1', W - margin, 285, { align: 'right' });
+
+    const nomeArquivo = (p.numeroContrato + '_' + p.cliente + '_' + p.tipo)
+      .replace(/[^a-zA-Z0-9_]/g, '_').replace(/__+/g, '_').substring(0, 60) + '.pdf';
+    doc.save(nomeArquivo);
+  };
+
   const renderMinhasTarefas = () => {
     const meusProjetos = projetos.filter(p => p.projetista === currentUser?.nome);
 
@@ -852,6 +1011,9 @@ export default function App() {
 
               {/* Footer */}
               <div className="flex justify-end gap-3 px-6 pb-6">
+                <button onClick={() => exportarPDF(projetoDetalhe)} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors">
+                  <FileText size={15} /> Exportar PDF
+                </button>
                 <button onClick={() => { setProjetoDetalhe(null); abrirEdicaoCompleta(projetoDetalhe); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors">
                   <Edit2 size={15} /> Editar Projeto
                 </button>
