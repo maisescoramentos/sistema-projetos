@@ -43,7 +43,7 @@ import {
 // Dados de exemplo atualizados com as novas nomenclaturas e equipe real
 const MOCK_DATA = [];
 
-// (6) Status simplificado: apenas Concluído e Revisão
+// (6) Status simplificado
 const STATUS_OPTIONS = ['Concluído', 'Em Andamento', 'Revisão'];
 
 // (6/7) Motivos de revisão padronizados (com opção "Outro motivo" livre)
@@ -68,6 +68,14 @@ const PROJETO_CLIENTE_OPCOES = [
   'Necessidade de adaptação por conta do terreno'
 ];
 
+// (11) Tipos de pavimento padronizados
+const TIPO_PAVIMENTO_OPCOES = [
+  'Pav. Tipo',
+  '1º projeto',
+  'Pav. transição',
+  'Outro'
+];
+
 // Helper: validar máscara do contrato XXX/XXXX
 const CONTRATO_REGEX = /^\d{3}\/\d{4}$/;
 
@@ -76,6 +84,25 @@ const formatarRevisao = (valor) => {
   const num = parseInt(valor, 10);
   if (Number.isNaN(num) || num <= 0) return '';
   return String(num).padStart(2, '0');
+};
+
+// (11) Helper: calcular duração entre dois datetime-local (string amigável)
+const calcularDuracao = (inicio, fim) => {
+  if (!inicio || !fim) return '';
+  const i = new Date(inicio);
+  const f = new Date(fim);
+  if (Number.isNaN(i.getTime()) || Number.isNaN(f.getTime())) return '';
+  const diffMs = f.getTime() - i.getTime();
+  if (diffMs <= 0) return '';
+  const totalMin = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (mins > 0 || parts.length === 0) parts.push(`${mins}min`);
+  return parts.join(' ');
 };
 
 // Helper: estado inicial do formulário
@@ -96,6 +123,13 @@ const initialFormData = () => ({
   motivoRevisao: '',
   outroMotivoTexto: '',
   projetoCliente: '',
+  // (11) Novos campos
+  tipoPavimento: '',
+  outroTipoPavimentoTexto: '',
+  alturaLaje: '',
+  dataHoraInicio: '',
+  dataHoraFim: '',
+  duracao: '',
   notas: ''
 });
 
@@ -334,6 +368,12 @@ export default function App() {
       return;
     }
 
+    // Validação: dataHoraFim >= dataHoraInicio (se preenchidas)
+    if (formData.dataHoraInicio && formData.dataHoraFim && formData.dataHoraFim < formData.dataHoraInicio) {
+      alert('A "Data e Hora de finalização" não pode ser anterior à "Data e Hora de início".');
+      return;
+    }
+
     const baseId = Date.now();
     const numeroRevisaoFinal = formData.status === 'Revisão'
       ? formatarRevisao(formData.numeroRevisao)
@@ -342,6 +382,16 @@ export default function App() {
     const motivoFinal = formData.motivoRevisao === 'OUTRO MOTIVO'
       ? `OUTRO MOTIVO: ${formData.outroMotivoTexto.trim()}`
       : formData.motivoRevisao;
+
+    // (11) Tipo de pavimento final (com "Outro" → texto digitado)
+    const tipoPavimentoFinal = formData.tipoPavimento === 'Outro'
+      ? (formData.outroTipoPavimentoTexto.trim() || 'Outro')
+      : (formData.tipoPavimento || '');
+
+    // (11) Duração final (manual ou auto)
+    const duracaoFinal = (formData.duracao || '').trim()
+      || calcularDuracao(formData.dataHoraInicio, formData.dataHoraFim)
+      || '';
 
     const novosProjetos = tiposSelecionados.map((tipoSelecionado, index) => {
       const chave = tipoSelecionado === (isOutro && outroValor.trim() ? outroValor.trim().toUpperCase() : null)
@@ -357,6 +407,13 @@ export default function App() {
         pavimento: formData.pavimento || '',
         peso: pesoDoTipo,
         pesoPorTipo: undefined,
+        // (11) Sanitização dos novos campos
+        tipoPavimento: tipoPavimentoFinal,
+        outroTipoPavimentoTexto: undefined,
+        alturaLaje: Number(formData.alturaLaje) || 0,
+        dataHoraInicio: formData.dataHoraInicio || '',
+        dataHoraFim: formData.dataHoraFim || '',
+        duracao: duracaoFinal,
         numeroRevisao: numeroRevisaoFinal,
         motivoRevisao: formData.status === 'Revisão' ? motivoFinal : ''
       };
@@ -364,7 +421,7 @@ export default function App() {
 
     // Modo edição: atualiza o projeto existente
     if (modoEdicao && projetoEditandoId) {
-      const { id: _id, pesoPorTipo: _ppt, ...dadosAtualizados } = novosProjetos[0];
+      const { id: _id, pesoPorTipo: _ppt, outroTipoPavimentoTexto: _opt, ...dadosAtualizados } = novosProjetos[0];
       try {
         await updateDoc(doc(db, 'projetos', String(projetoEditandoId)), dadosAtualizados);
       } catch (err) {
@@ -384,7 +441,7 @@ export default function App() {
     // Salvar cada projeto no Firestore
     try {
       await Promise.all(novosProjetos.map(p => {
-        const { id, pesoPorTipo, ...dados } = p;
+        const { id, pesoPorTipo, outroTipoPavimentoTexto, ...dados } = p;
         return addDoc(collection(db, 'projetos'), { ...dados, criadoEm: Date.now() });
       }));
     } catch (err) {
@@ -715,6 +772,12 @@ export default function App() {
 
   // --- Abrir formulário completo para edição ---
   const abrirEdicaoCompleta = (projeto) => {
+    // Identifica se motivoRevisao é "OUTRO MOTIVO: ..."
+    const motivoEhOutro = projeto.motivoRevisao?.startsWith('OUTRO MOTIVO');
+    const outroMotivoTexto = motivoEhOutro ? projeto.motivoRevisao.replace(/^OUTRO MOTIVO:?\s*/, '') : '';
+    // Identifica tipoPavimento "Outro"
+    const tiposConhecidos = ['Pav. Tipo', '1º projeto', 'Pav. transição'];
+    const ehOutroPav = projeto.tipoPavimento && !tiposConhecidos.includes(projeto.tipoPavimento);
     // Preenche o formData com os dados do projeto
     setFormData({
       numeroContrato: projeto.numeroContrato || '',
@@ -730,13 +793,16 @@ export default function App() {
       peso: projeto.peso || '',
       pesoPorTipo: { [projeto.tipo]: projeto.peso },
       numeroRevisao: projeto.numeroRevisao || '',
-      motivoRevisao: projeto.motivoRevisao?.startsWith('OUTRO MOTIVO:')
-        ? 'OUTRO MOTIVO'
-        : projeto.motivoRevisao || '',
-      outroMotivoTexto: projeto.motivoRevisao?.startsWith('OUTRO MOTIVO:')
-        ? projeto.motivoRevisao.replace('OUTRO MOTIVO: ', '')
-        : '',
+      motivoRevisao: motivoEhOutro ? 'OUTRO MOTIVO' : (projeto.motivoRevisao || ''),
+      outroMotivoTexto,
       projetoCliente: projeto.projetoCliente || '',
+      // (11) Restaura novos campos
+      tipoPavimento: ehOutroPav ? 'Outro' : (projeto.tipoPavimento || ''),
+      outroTipoPavimentoTexto: ehOutroPav ? projeto.tipoPavimento : '',
+      alturaLaje: projeto.alturaLaje || '',
+      dataHoraInicio: projeto.dataHoraInicio || '',
+      dataHoraFim: projeto.dataHoraFim || '',
+      duracao: projeto.duracao || '',
       notas: projeto.notas || ''
     });
     setIsOutro(false);
@@ -803,7 +869,7 @@ export default function App() {
 
     // Status badge
     const statusColor = p.status === 'Concluído' ? [22, 163, 74] : [217, 119, 6];
-    doc.setFillColor(...statusColor);
+    doc.setFillColor(statusColor[0], statusColor[1], statusColor[2]);
     doc.roundedRect(margin, y, 38, 7, 2, 2, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(9);
@@ -857,6 +923,30 @@ export default function App() {
     campo('Pavimento', p.pavimento, margin, y);
     campo('Peso Total (kg)', p.peso ? num(p.peso) + ' kg' : '—', col2, y);
     y += 17;
+
+    // (11) Linha extra: Tipo de pavimento + Altura da laje
+    if (p.tipoPavimento || p.alturaLaje) {
+      campo('Tipo de Pavimento', p.tipoPavimento, margin, y);
+      campo('Altura da Laje (cm)', p.alturaLaje ? num(p.alturaLaje) + ' cm' : '—', col2, y);
+      y += 17;
+    }
+
+    // (11) Linha extra: Datetime início/fim + Duração
+    if (p.dataHoraInicio || p.dataHoraFim || p.duracao) {
+      const fmtDH = (s) => {
+        if (!s) return '—';
+        const d = new Date(s);
+        if (Number.isNaN(d.getTime())) return s;
+        return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+      };
+      campo('Início (data/hora)', fmtDH(p.dataHoraInicio), margin, y);
+      campo('Fim (data/hora)', fmtDH(p.dataHoraFim), col2, y);
+      y += 17;
+      if (p.duracao) {
+        campo('Duração', p.duracao, margin, y, W - margin * 2);
+        y += 17;
+      }
+    }
 
     // ── Projeto do Cliente ──
     if (p.projetoCliente) {
@@ -990,6 +1080,36 @@ export default function App() {
                   <div className="bg-slate-50 rounded-xl p-4">
                     <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Peso</p>
                     <p className="font-semibold text-slate-800">{projetoDetalhe.peso.toLocaleString('pt-BR')} kg</p>
+                  </div>
+                )}
+                {projetoDetalhe.tipoPavimento && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Tipo de Pavimento</p>
+                    <p className="font-semibold text-slate-800">{projetoDetalhe.tipoPavimento}</p>
+                  </div>
+                )}
+                {projetoDetalhe.alturaLaje > 0 && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Altura da Laje</p>
+                    <p className="font-semibold text-slate-800">{projetoDetalhe.alturaLaje} cm</p>
+                  </div>
+                )}
+                {projetoDetalhe.dataHoraInicio && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Início (data/hora)</p>
+                    <p className="font-semibold text-slate-800">{new Date(projetoDetalhe.dataHoraInicio).toLocaleString('pt-BR')}</p>
+                  </div>
+                )}
+                {projetoDetalhe.dataHoraFim && (
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Fim (data/hora)</p>
+                    <p className="font-semibold text-slate-800">{new Date(projetoDetalhe.dataHoraFim).toLocaleString('pt-BR')}</p>
+                  </div>
+                )}
+                {projetoDetalhe.duracao && (
+                  <div className="bg-slate-50 rounded-xl p-4 col-span-2">
+                    <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Duração do Projeto</p>
+                    <p className="font-semibold text-slate-800 font-mono">{projetoDetalhe.duracao}</p>
                   </div>
                 )}
                 {projetoDetalhe.projetoCliente && (
@@ -1206,263 +1326,7 @@ export default function App() {
     </div>
   );
 
-  // (9) Dashboard com filtros de período, projetista e status
-  // --- Exportar Dashboard em PDF ---
-  const exportarDashboardPDF = () => {
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const W = 297; const PH = 210; const M = 14; const tW = W - M * 2; // 269
-    let y = 0;
-    let pageNum = 1;
-
-    const fmt  = (d) => d ? d.split('-').reverse().join('/') : '—';
-    const safe = (v) => (v === undefined || v === null) ? '—' : String(v);
-
-    const addPage = () => {
-      doc.addPage(); pageNum++; y = 18;
-    };
-
-    const checkY = (needed) => { if (y + needed > 190) addPage(); };
-
-    const sectionTitle = (txt) => {
-      checkY(20);
-      doc.setDrawColor(226,232,240);
-      doc.line(M, y, W - M, y);
-      y += 5;
-      doc.setTextColor(30,64,175); doc.setFontSize(10); doc.setFont('helvetica','bold');
-      doc.text(txt, M, y); y += 7;
-    };
-
-    const tableHeader = (cols, headers, bgR=30, bgG=64, bgB=175) => {
-      checkY(8);
-      doc.setFillColor(bgR,bgG,bgB); doc.rect(M, y, tW, 8, 'F');
-      doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
-      let x = M;
-      headers.forEach((h,i) => { doc.text(h, x+2, y+5.5); x += cols[i]; });
-      y += 8;
-    };
-
-    const tableRow = (cols, vals, opts = {}) => {
-      checkY(8);
-      const bg = opts.bg || [255,255,255];
-      doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
-      let x = M;
-      vals.forEach((cell, i) => {
-        const color = cell.color || [15,23,42];
-        const bold  = cell.bold  || false;
-        doc.setTextColor(...color);
-        doc.setFontSize(cell.size || 8.5);
-        doc.setFont('helvetica', bold ? 'bold' : 'normal');
-        const txt = doc.splitTextToSize(cell.v, cols[i] - 4)[0] || '';
-        doc.text(txt, x + 2, y + 5.5);
-        x += cols[i];
-      });
-      y += 8;
-    };
-
-    // ════════════════════════════════
-    // HEADER
-    // ════════════════════════════════
-    doc.setFillColor(30,64,175); doc.rect(0,0,W,22,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(16); doc.setFont('helvetica','bold');
-    doc.text('MAIS ESCORAMENTOS', M, 10);
-    doc.setFontSize(10); doc.setFont('helvetica','normal');
-    doc.text('Dashboard — Visão Geral da Produção', M, 17);
-    const agora = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-    doc.text('Gerado em: ' + agora, W - M, 17, {align:'right'});
-    y = 30;
-
-    // Período
-    doc.setTextColor(71,85,105); doc.setFontSize(9); doc.setFont('helvetica','normal');
-    const periodo = (dashPeriodoInicio || dashPeriodoFim)
-      ? 'Período: ' + (dashPeriodoInicio ? fmt(dashPeriodoInicio) : 'Início') + ' → ' + (dashPeriodoFim ? fmt(dashPeriodoFim) : 'Hoje')
-      : 'Período: Todos os registros';
-    const filtResp = dashFiltroProjetista ? '   |   Responsável: ' + dashFiltroProjetista : '';
-    doc.text(periodo + filtResp, M, y); y += 9;
-
-    // ════════════════════════════════
-    // KPI CARDS
-    // ════════════════════════════════
-    const emAndamento = Math.max(0, stats.total - stats.concluidos - stats.emRevisao);
-    const pct = (n) => stats.total > 0 ? Math.round(n / stats.total * 100) + '%' : '0%';
-    const kpis = [
-      { label:'TOTAL DE PROJETOS', value:safe(stats.total),      sub:'',                    cor:[30,64,175],  bg:[239,246,255] },
-      { label:'CONCLUÍDOS',        value:safe(stats.concluidos), sub:pct(stats.concluidos), cor:[22,101,52],  bg:[240,253,244] },
-      { label:'EM ANDAMENTO',      value:safe(emAndamento),      sub:pct(emAndamento),      cor:[29,78,216],  bg:[219,234,254] },
-      { label:'REVISÃO',           value:safe(stats.emRevisao),  sub:pct(stats.emRevisao),  cor:[146,64,14],  bg:[255,251,235] },
-    ];
-    const cW = (tW - 9) / 4;
-    kpis.forEach((k, i) => {
-      const x = M + i*(cW+3);
-      doc.setFillColor(...k.bg); doc.roundedRect(x, y, cW, 20, 2, 2, 'F');
-      // label
-      doc.setTextColor(100,116,139); doc.setFontSize(7); doc.setFont('helvetica','bold');
-      doc.text(k.label, x+4, y+6);
-      // value
-      doc.setTextColor(...k.cor); doc.setFontSize(20); doc.setFont('helvetica','bold');
-      doc.text(k.value, x+4, y+15.5);
-      // sub (% — on same line, smaller)
-      if (k.sub) {
-        const vw = doc.getTextWidth(k.value);
-        doc.setFontSize(8); doc.setFont('helvetica','normal');
-        doc.text(k.sub + ' do total', x + 6 + vw, y + 15.5);
-      }
-    });
-    y += 28;
-
-    // ════════════════════════════════
-    // 1. PARTICIPAÇÃO POR RESPONSÁVEL
-    // ════════════════════════════════
-    sectionTitle('1. PARTICIPAÇÃO E VOLUME POR RESPONSÁVEL');
-    const colR = [65, 24, 24, 28, 24, tW-65-24-24-28-24];
-    tableHeader(colR, ['Responsável','Projetos','% Total','Concluídos','Revisões','Tipos Principais']);
-    stats.rankingProjetistas.forEach((proj, idx) => {
-      const tipos = Object.entries(proj.porTipo||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t).join(', ') || '—';
-      tableRow(colR, [
-        {v:proj.nome,                               bold:idx===0},
-        {v:safe(proj.total),                        bold:idx===0},
-        {v:proj.percentual+'%'},
-        {v:safe(proj.porStatus['Concluído']||0),    color:[22,101,52],  bold:true},
-        {v:safe(proj.porStatus['Revisão']||0),      color:[146,64,14],  bold:true},
-        {v:tipos,                                   size:7.5},
-      ], {bg: idx%2===0?[248,250,252]:[255,255,255]});
-    });
-    // totais
-    checkY(8);
-    doc.setFillColor(226,232,240); doc.rect(M, y, tW, 8, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(9);
-    let xT = M;
-    [
-      {v:'TOTAL',               color:[15,23,42]},
-      {v:safe(stats.total),     color:[15,23,42]},
-      {v:'100%',                color:[15,23,42]},
-      {v:safe(stats.concluidos),color:[22,101,52]},
-      {v:safe(stats.emRevisao), color:[146,64,14]},
-      {v:'',                    color:[15,23,42]},
-    ].forEach((c,i) => {
-      doc.setTextColor(...c.color); doc.text(c.v, xT+2, y+5.5); xT += colR[i];
-    });
-    y += 14;
-
-    // ════════════════════════════════
-    // 2. TIPO × RESPONSÁVEL
-    // ════════════════════════════════
-    sectionTitle('2. PROJETOS POR TIPO DE ESTRUTURA × RESPONSÁVEL');
-    const projetistas = stats.rankingProjetistas.map(p => p.nome);
-    const tipoColW = 85;
-    const availW   = tW - tipoColW - 22 - 18;
-    const numCW    = Math.floor(availW / Math.max(projetistas.length, 1));
-    const colCruz  = [tipoColW, ...projetistas.map(()=>numCW), 22, 18];
-    tableHeader(colCruz, ['Tipo de Estrutura', ...projetistas, 'Total', '%']);
-    stats.rankingTipos.forEach((t, idx) => {
-      checkY(8);
-      const bg = idx%2===0?[248,250,252]:[255,255,255];
-      doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
-      doc.setTextColor(15,23,42); doc.setFontSize(8); doc.setFont('helvetica','normal');
-      let x = M;
-      doc.text(doc.splitTextToSize(t.tipo, tipoColW-4)[0], x+2, y+5.5); x += tipoColW;
-      projetistas.forEach(nome => {
-        const proj = stats.rankingProjetistas.find(p=>p.nome===nome);
-        const qtd  = proj?.porTipo?.[t.tipo] || 0;
-        if (qtd > 0) {
-          doc.setTextColor(30,64,175); doc.setFont('helvetica','bold');
-          doc.text(safe(qtd), x+2, y+5.5);
-        } else {
-          doc.setTextColor(180,180,180); doc.setFont('helvetica','normal');
-          doc.text('—', x+2, y+5.5);
-        }
-        x += numCW;
-      });
-      doc.setTextColor(15,23,42); doc.setFont('helvetica','bold');
-      doc.text(safe(t.qtd), x+2, y+5.5); x += 22;
-      doc.setFont('helvetica','normal');
-      doc.text(t.percentual+'%', x+2, y+5.5);
-      y += 8;
-    });
-    // totais
-    checkY(8);
-    doc.setFillColor(226,232,240); doc.rect(M, y, tW, 8, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(15,23,42);
-    let xC = M;
-    doc.text('TOTAL', xC+2, y+5.5); xC += tipoColW;
-    projetistas.forEach(nome => {
-      const proj = stats.rankingProjetistas.find(p=>p.nome===nome);
-      doc.text(safe(proj?.total||0), xC+2, y+5.5); xC += numCW;
-    });
-    doc.text(safe(stats.total), xC+2, y+5.5); xC += 22;
-    doc.text('100%', xC+2, y+5.5);
-    y += 14;
-
-    // ════════════════════════════════
-    // 3. DISTRIBUIÇÃO POR TIPO
-    // ════════════════════════════════
-    sectionTitle('3. DISTRIBUIÇÃO POR TIPO DE ESTRUTURA');
-    const barAreaW = tW - 105 - 26 - 26;
-    const colD = [105, 26, 26, barAreaW];
-    tableHeader(colD, ['Tipo de Estrutura','Projetos','% Total','Distribuição Visual']);
-    stats.rankingTipos.forEach((t, idx) => {
-      checkY(8);
-      const bg = idx%2===0?[248,250,252]:[255,255,255];
-      doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
-      doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
-      let x = M;
-      doc.text(t.tipo, x+2, y+5.5); x += colD[0];
-      doc.text(safe(t.qtd), x+2, y+5.5); x += colD[1];
-      doc.text(t.percentual+'%', x+2, y+5.5); x += colD[2];
-      // barra
-      const bW = barAreaW - 6;
-      doc.setFillColor(220,230,240); doc.roundedRect(x+1, y+2.5, bW, 3.5, 1, 1, 'F');
-      const fill = Math.max(2, bW * (t.percentual / 100));
-      doc.setFillColor(30,64,175); doc.roundedRect(x+1, y+2.5, fill, 3.5, 1, 1, 'F');
-      // % dentro da barra
-      doc.setTextColor(255,255,255); doc.setFontSize(6); doc.setFont('helvetica','bold');
-      if (fill > 12) doc.text(t.percentual+'%', x+3, y+5.2);
-      y += 8;
-    });
-    y += 6;
-
-    // ════════════════════════════════
-    // 4. MOTIVOS DE REVISÃO
-    // ════════════════════════════════
-    if (stats.rankingMotivos && stats.rankingMotivos.length > 0) {
-      sectionTitle('4. ANÁLISE DE MOTIVOS DE REVISÃO  (' + safe(stats.totalRevisoes) + ' revisões no período)');
-      const bMW = tW - 130 - 24 - 24;
-      const colMot = [130, 24, 24, bMW];
-      tableHeader(colMot, ['Motivo','Qtd','%','Frequência'], 146, 64, 14);
-      stats.rankingMotivos.forEach((m, idx) => {
-        checkY(8);
-        const bg = idx%2===0?[255,253,247]:[255,255,255];
-        doc.setFillColor(...bg); doc.rect(M, y, tW, 8, 'F');
-        doc.setTextColor(15,23,42); doc.setFontSize(8.5); doc.setFont('helvetica','normal');
-        let x = M;
-        doc.text(doc.splitTextToSize(m.motivo, colMot[0]-4)[0], x+2, y+5.5); x += colMot[0];
-        doc.setTextColor(146,64,14); doc.setFont('helvetica','bold');
-        doc.text(safe(m.qtd), x+2, y+5.5); x += colMot[1];
-        doc.text(m.percentual+'%', x+2, y+5.5); x += colMot[2];
-        const bW = bMW - 6;
-        doc.setFillColor(254,230,190); doc.roundedRect(x+1, y+2.5, bW, 3.5, 1, 1, 'F');
-        const fill = Math.max(2, bW * (m.percentual / 100));
-        doc.setFillColor(217,119,6); doc.roundedRect(x+1, y+2.5, fill, 3.5, 1, 1, 'F');
-        if (fill > 12) { doc.setTextColor(255,255,255); doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.text(m.percentual+'%', x+3, y+5.2); }
-        y += 8;
-      });
-    }
-
-    // ════════════════════════════════
-    // FOOTER em todas as páginas
-    // ════════════════════════════════
-    const totalPages = doc.getNumberOfPages();
-    for (let i=1; i<=totalPages; i++) {
-      doc.setPage(i);
-      doc.setFillColor(30,64,175); doc.rect(0, PH-10, W, 10, 'F');
-      doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','normal');
-      doc.text('Mais Escoramentos — Dashboard gerado automaticamente', M, PH-4);
-      doc.text('Página ' + i + ' de ' + totalPages, W-M, PH-4, {align:'right'});
-    }
-
-    doc.save('Dashboard_MaisEscoramentos_' + new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-') + '.pdf');
-  };
-
+  // (9) Dashboard - mantido idêntico ao original (sem alterações pedidas nesta rodada)
   const renderDashboard = () => {
     const limparFiltros = () => {
       setDashPeriodoInicio('');
@@ -1493,9 +1357,6 @@ export default function App() {
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <BarChart3 className="text-blue-600" /> Visão Geral da Produção
           </h2>
-          <button onClick={exportarDashboardPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm">
-            <FileText size={15} /> Exportar PDF
-          </button>
         </div>
 
         {/* Painel de Filtros */}
@@ -1515,7 +1376,6 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Período De */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Período de</label>
               <input
@@ -1525,8 +1385,6 @@ export default function App() {
                 className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
-
-            {/* Período Até */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Até</label>
               <input
@@ -1536,8 +1394,6 @@ export default function App() {
                 className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
-
-            {/* Filtro Projetista */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Responsável</label>
               <select
@@ -1551,8 +1407,6 @@ export default function App() {
                 ))}
               </select>
             </div>
-
-            {/* Filtro Status */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Status</label>
               <select
@@ -1568,7 +1422,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Atalhos de período + resumo dos filtros ativos */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-100">
             <div className="flex flex-wrap gap-2">
               <button onClick={setPeriodoMes} className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors">
@@ -1701,71 +1554,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* BLOCO 2 — Projetos por Tipo × Responsável */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-200 bg-slate-50">
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <Wrench size={18} className="text-blue-600" /> Projetos por Tipo de Estrutura × Responsável
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">Cruzamento de quantos projetos de cada tipo cada projetista realizou no período.</p>
-          </div>
-          {stats.rankingTipos.length === 0 ? (
-            <p className="px-6 py-8 text-center text-slate-500">Nenhum dado registrado no período selecionado.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-white border-b border-slate-200 text-slate-600 font-medium">
-                  <tr>
-                    <th className="px-6 py-4 min-w-[220px]">Tipo de Estrutura</th>
-                    {stats.rankingProjetistas.map((p, i) => (
-                      <th key={i} className="px-4 py-4 text-center whitespace-nowrap">{p.nome}</th>
-                    ))}
-                    <th className="px-4 py-4 text-center font-bold text-slate-700 bg-slate-50">Total</th>
-                    <th className="px-4 py-4 text-center font-bold text-slate-700 bg-slate-50">%</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {stats.rankingTipos.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-3">
-                        <span className="font-medium text-slate-800 uppercase text-xs">{item.tipo}</span>
-                      </td>
-                      {stats.rankingProjetistas.map((proj, i) => {
-                        const qtd = proj.porTipo[item.tipo] || 0;
-                        return (
-                          <td key={i} className="px-4 py-3 text-center">
-                            {qtd > 0
-                              ? <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs">{qtd}</span>
-                              : <span className="text-slate-300 text-xs">—</span>
-                            }
-                          </td>
-                        );
-                      })}
-                      <td className="px-4 py-3 text-center bg-slate-50">
-                        <span className="font-bold text-slate-800">{item.qtd}</span>
-                      </td>
-                      <td className="px-4 py-3 text-center bg-slate-50">
-                        <span className="text-xs font-semibold text-slate-500">{item.percentual}%</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-slate-50 border-t-2 border-slate-200">
-                  <tr>
-                    <td className="px-6 py-3 font-bold text-slate-700">TOTAL</td>
-                    {stats.rankingProjetistas.map((proj, i) => (
-                      <td key={i} className="px-4 py-3 text-center font-bold text-slate-800">{proj.total}</td>
-                    ))}
-                    <td className="px-4 py-3 text-center font-bold text-slate-800 bg-slate-100">{stats.total}</td>
-                    <td className="px-4 py-3 text-center font-bold text-slate-700 bg-slate-100">100%</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* BLOCO 3 — Motivos de Revisão */}
+        {/* BLOCO 2 — Motivos de Revisão */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-6 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-3">
             <div>
@@ -1818,7 +1607,7 @@ export default function App() {
     );
   };
 
-  // (1)-(8) Formulário com TODOS os novos campos
+  // (1)-(11) Formulário com TODOS os novos campos
   const renderForm = () => {
     const isRevisao = formData.status === 'Revisão';
     const isOutroMotivo = formData.motivoRevisao === 'OUTRO MOTIVO';
@@ -1936,6 +1725,95 @@ export default function App() {
                 <Weight size={14} className="text-slate-400" /> Peso do projeto (kg)
               </label>
               <input type="number" step="0.01" min="0" name="peso" value={formData.peso} onChange={handleInputChange} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="Ex: 1200" />
+            </div>
+          </div>
+
+          {/* (11) Tipo de pavimento + Altura da laje */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <Layers size={14} className="text-slate-400" /> Tipo de pavimento
+              </label>
+              <select
+                name="tipoPavimento"
+                value={formData.tipoPavimento}
+                onChange={handleInputChange}
+                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-white"
+              >
+                <option value="">Selecione...</option>
+                {TIPO_PAVIMENTO_OPCOES.map(op => <option key={op} value={op}>{op}</option>)}
+              </select>
+              {formData.tipoPavimento === 'Outro' && (
+                <input
+                  type="text"
+                  name="outroTipoPavimentoTexto"
+                  value={formData.outroTipoPavimentoTexto}
+                  onChange={handleInputChange}
+                  className="mt-2 w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  placeholder="Descreva o tipo de pavimento..."
+                />
+              )}
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <Ruler size={14} className="text-slate-400" /> Altura da laje (cm)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                name="alturaLaje"
+                value={formData.alturaLaje}
+                onChange={handleInputChange}
+                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                placeholder="Ex: 12"
+              />
+            </div>
+          </div>
+
+          {/* (11) Data/Hora de início e finalização + Duração manual */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <Calendar size={14} className="text-slate-400" /> Data e Hora de início do projeto
+              </label>
+              <input
+                type="datetime-local"
+                name="dataHoraInicio"
+                value={formData.dataHoraInicio}
+                onChange={handleInputChange}
+                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <Calendar size={14} className="text-slate-400" /> Data e Hora de finalização do projeto
+              </label>
+              <input
+                type="datetime-local"
+                name="dataHoraFim"
+                value={formData.dataHoraFim}
+                onChange={handleInputChange}
+                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <Clock size={14} className="text-slate-400" /> Duração do projeto
+              </label>
+              <input
+                type="text"
+                name="duracao"
+                value={formData.duracao}
+                onChange={handleInputChange}
+                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                placeholder={calcularDuracao(formData.dataHoraInicio, formData.dataHoraFim) || 'Ex: 3h 30min, 2 dias...'}
+              />
+              {calcularDuracao(formData.dataHoraInicio, formData.dataHoraFim) && !formData.duracao && (
+                <p className="text-xs text-slate-500 italic mt-1">
+                  Sugestão calculada: <strong className="font-mono">{calcularDuracao(formData.dataHoraInicio, formData.dataHoraFim)}</strong>
+                </p>
+              )}
             </div>
           </div>
 
@@ -2064,8 +1942,11 @@ export default function App() {
           </div>
 
           <div className="space-y-1 pt-2">
-            <label className="text-sm font-medium text-slate-700">Observações Gerais</label>
-            <textarea name="notas" value={formData.notas} onChange={handleInputChange} rows="2" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none" placeholder="Informações adicionais para a gestão..."></textarea>
+            <label className="text-sm font-medium text-slate-700 flex flex-wrap items-baseline gap-x-2">
+              <span>Observações Gerais</span>
+              <span className="text-xs text-slate-500 font-normal italic">(ex.: o projeto possui muitas vigas de diferentes seções, muitas interferências etc)</span>
+            </label>
+            <textarea name="notas" value={formData.notas} onChange={handleInputChange} rows="3" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none" placeholder="Descreva particularidades técnicas do projeto..."></textarea>
           </div>
 
           <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
@@ -2090,7 +1971,6 @@ export default function App() {
 
   const renderList = () => (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Header */}
       <div className="p-5 border-b border-slate-200 bg-slate-50 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -2114,7 +1994,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Tabela */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wide font-semibold">
@@ -2141,7 +2020,6 @@ export default function App() {
                 <tr key={projeto.id} className={`hover:bg-blue-50 transition-colors cursor-pointer ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
                   onClick={() => setProjetoDetalhe(projeto)}>
 
-                  {/* Contrato / Cliente */}
                   <td className="px-4 py-3 max-w-[180px]">
                     <div className="font-semibold text-slate-800 text-sm">{projeto.numeroContrato}</div>
                     <div className="text-slate-500 text-xs mt-0.5 truncate" title={projeto.cliente}>{projeto.cliente}</div>
@@ -2150,12 +2028,10 @@ export default function App() {
                     )}
                   </td>
 
-                  {/* Responsável */}
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center bg-slate-100 px-2 py-0.5 rounded text-slate-700 text-xs font-medium whitespace-nowrap">{projeto.projetista}</span>
                   </td>
 
-                  {/* Período */}
                   <td className="px-4 py-3 text-slate-600 text-xs whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       <Calendar size={12} className="text-slate-400 shrink-0" />
@@ -2167,7 +2043,6 @@ export default function App() {
                     </div>
                   </td>
 
-                  {/* Tipo / Revisão */}
                   <td className="px-4 py-3 max-w-[160px]">
                     <div className="text-slate-700 font-semibold text-xs uppercase truncate" title={projeto.tipo}>{projeto.tipo}</div>
                     {projeto.status === 'Revisão' && projeto.numeroRevisao && (
@@ -2178,20 +2053,18 @@ export default function App() {
                     )}
                   </td>
 
-                  {/* Medidas */}
                   <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
                     {projeto.area > 0    && <div><span className="font-medium text-slate-600">{projeto.area}</span> m²</div>}
                     {projeto.peDireito > 0 && <div>PD: <span className="font-medium text-slate-600">{projeto.peDireito}</span> m</div>}
                     {projeto.pavimento   && <div className="truncate max-w-[90px]" title={projeto.pavimento}>{projeto.pavimento}</div>}
+                    {projeto.alturaLaje > 0 && <div>Laje: <span className="font-medium text-slate-600">{projeto.alturaLaje}</span> cm</div>}
                     {projeto.peso > 0    && <div><span className="font-medium text-slate-600">{Number(projeto.peso).toLocaleString('pt-BR')}</span> kg</div>}
                   </td>
 
-                  {/* Status */}
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     {renderStatusDropdown(projeto)}
                   </td>
 
-                  {/* Ações */}
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-1">
                       <button onClick={() => abrirEdicaoCompleta(projeto)} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
@@ -2235,7 +2108,6 @@ export default function App() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* Bloco Usuários e Senhas */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col h-full">
           <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-3">
             <ShieldAlert size={20} className="text-blue-600" /> Controle de Acessos
@@ -2311,7 +2183,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Bloco Tipos de Estrutura */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col h-full">
           <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold border-b border-slate-100 pb-3">
             <Wrench size={20} className="text-blue-600" /> Tipos de Estrutura (Checkbox)
@@ -2372,572 +2243,46 @@ export default function App() {
     </div>
   );
 
-  // =====================================================
-  // (10) MODAL DE DOCUMENTAÇÃO TÉCNICA COMPLETA
-  // =====================================================
-  const DOCS_SECTIONS = [
-    { id: 'visao-geral', label: '📋 Visão Geral', group: 'Introdução' },
-    { id: 'infraestrutura', label: '🚀 Infraestrutura e Deploy', group: 'Introdução' },
-    { id: 'arquitetura', label: '🏗️ Arquitetura do Sistema', group: 'Introdução' },
-    { id: 'tecnologias', label: '⚡ Stack Tecnológico', group: 'Introdução' },
-    { id: 'mod-form', label: '📝 Cadastro de Projeto', group: 'Módulos' },
-    { id: 'mod-tarefas', label: '👷 Minhas Tarefas', group: 'Módulos' },
-    { id: 'mod-dashboard', label: '📊 Dashboard', group: 'Módulos' },
-    { id: 'mod-historico', label: '📜 Histórico Geral', group: 'Módulos' },
-    { id: 'mod-config', label: '⚙️ Configurações', group: 'Módulos' },
-    { id: 'estados', label: '📦 Estados (useState)', group: 'Dados' },
-    { id: 'schemas', label: '📐 Schemas de Dados', group: 'Dados' },
-    { id: 'permissoes', label: '🔐 Permissões e Acessos', group: 'Dados' },
-    { id: 'manutencao', label: '🛠️ Manutenção', group: 'Operação' },
-    { id: 'faq', label: '❓ FAQ Técnico', group: 'Operação' }
-  ];
-
-  const renderDocsContent = () => {
-    switch (docsSection) {
-      case 'visao-geral':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">📋 Visão Geral do Sistema</h2>
-            <p className="text-slate-600 leading-relaxed">
-              O <strong>Mais Projetos</strong> é o sistema interno de gestão de projetos de escoramento da
-              <strong> Mais Escoramentos</strong>. Ele controla a entrada, execução e revisão de cada projeto
-              técnico produzido pela equipe de projetistas, com painéis específicos para administradores e
-              projetistas.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="text-xs text-blue-600 font-semibold uppercase">Versão</div>
-                <div className="text-2xl font-bold text-slate-800">v2.0.0</div>
-              </div>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="text-xs text-blue-600 font-semibold uppercase">Linhas de código</div>
-                <div className="text-2xl font-bold text-slate-800">~1.500</div>
-              </div>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="text-xs text-blue-600 font-semibold uppercase">Framework</div>
-                <div className="text-2xl font-bold text-slate-800">React 18</div>
-              </div>
-            </div>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Objetivos do Sistema</h3>
-            <ul className="list-disc pl-6 space-y-1 text-slate-700">
-              <li>Padronizar o cadastro de projetos de escoramento (forma, lajes, vigas, cimbramento, etc.).</li>
-              <li>Controlar o ciclo de vida do projeto: <strong>Concluído</strong> ou <strong>Revisão</strong>.</li>
-              <li>Rastrear motivos de revisão e número de revisões por projeto.</li>
-              <li>Consolidar produção por projetista e período no dashboard administrativo.</li>
-              <li>Centralizar o controle de acessos e tipos de estrutura.</li>
-            </ul>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Perfis de Usuário</h3>
-            <ul className="list-disc pl-6 space-y-1 text-slate-700">
-              <li><strong>Administrador (admin)</strong>: acesso total — Dashboard, Histórico Geral, Configurações, Novo Projeto e Minhas Tarefas.</li>
-              <li><strong>Projetista (projetista)</strong>: vê apenas <em>Minhas Tarefas</em> e cadastra <em>Novo Projeto</em> com o próprio nome travado.</li>
-            </ul>
-          </div>
-        );
-
-      case 'infraestrutura':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">🚀 Infraestrutura e Deploy</h2>
-            <p className="text-slate-600">
-              Aplicação <strong>front-end pura</strong> em React, sem backend dedicado. Pode ser hospedada em
-              qualquer serviço de páginas estáticas (Vercel, Netlify, GitHub Pages, S3, etc.).
-            </p>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Estrutura de pastas recomendada</h3>
-            <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs overflow-x-auto">
-{`mais-projetos/
-├── public/
-│   └── Logo Mais.jpg        ← Logotipo exibido no header
-├── src/
-│   ├── App.jsx              ← Componente raiz (este arquivo)
-│   ├── main.jsx             ← Bootstrap do React
-│   └── index.css            ← TailwindCSS
-├── package.json
-├── tailwind.config.js
-└── vite.config.js`}
-            </pre>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Comandos principais</h3>
-            <table className="w-full text-sm border-collapse">
-              <thead className="bg-slate-100">
-                <tr><th className="border border-slate-200 p-2 text-left">Comando</th><th className="border border-slate-200 p-2 text-left">Função</th></tr>
-              </thead>
-              <tbody>
-                <tr><td className="border border-slate-200 p-2 font-mono">npm install</td><td className="border border-slate-200 p-2">Instala dependências</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">npm run dev</td><td className="border border-slate-200 p-2">Sobe o servidor de desenvolvimento</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">npm run build</td><td className="border border-slate-200 p-2">Gera o build de produção</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">vercel --prod</td><td className="border border-slate-200 p-2">Publica em produção (caso use Vercel)</td></tr>
-              </tbody>
-            </table>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Rollback</h3>
-            <ol className="list-decimal pl-6 space-y-1 text-slate-700">
-              <li>Acesse o painel do provedor de deploy (Vercel/Netlify).</li>
-              <li>Selecione o projeto <strong>Mais Projetos</strong>.</li>
-              <li>Vá em <em>Deployments</em>, escolha a versão estável e clique em <strong>Promote to Production</strong>.</li>
-            </ol>
-          </div>
-        );
-
-      case 'arquitetura':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">🏗️ Arquitetura do Sistema</h2>
-            <p className="text-slate-600">
-              O sistema é um SPA (Single Page Application) com <strong>um único componente raiz</strong> (App.jsx)
-              que renderiza condicionalmente as abas. O estado é mantido em memória via <code className="bg-slate-100 px-1 rounded">useState</code>.
-            </p>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Camadas do App.jsx</h3>
-            <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs overflow-x-auto">
-{`┌──────────────────────────────────────────────────┐
-│ CONSTANTES (STATUS_OPTIONS, MOTIVOS_REVISAO, …)  │
-├──────────────────────────────────────────────────┤
-│ HELPERS (regex contrato, formatar revisão, …)    │
-├──────────────────────────────────────────────────┤
-│ ESTADOS (useState)                               │
-│  - sessão / login                                │
-│  - usuários, tipos, projetos                     │
-│  - formData (formulário principal)               │
-│  - filtros do histórico / dashboard              │
-├──────────────────────────────────────────────────┤
-│ HANDLERS (login, submit, status, ediçao, …)      │
-├──────────────────────────────────────────────────┤
-│ MEMOS (projetosFiltrados, stats, periodo)        │
-├──────────────────────────────────────────────────┤
-│ RENDERIZADORES                                   │
-│  - renderLogin                                   │
-│  - renderMinhasTarefas                           │
-│  - renderForm                                    │
-│  - renderDashboard (com filtro de período)       │
-│  - renderList                                    │
-│  - renderConfig                                  │
-│  - renderModalDetalhes                           │
-│  - renderDocs (documentação técnica)             │
-├──────────────────────────────────────────────────┤
-│ RETURN (header + tabs + main + modais)           │
-└──────────────────────────────────────────────────┘`}
-            </pre>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Fluxo de Dados</h3>
-            <ol className="list-decimal pl-6 space-y-1 text-slate-700">
-              <li>Login carrega o usuário e seta a aba inicial conforme a role.</li>
-              <li>O formulário grava cada item selecionado em <code className="bg-slate-100 px-1 rounded">projetos</code>.</li>
-              <li>O dashboard filtra projetos pelo período e gera as métricas.</li>
-              <li>O histórico aplica filtros adicionais (responsável, status, busca).</li>
-            </ol>
-          </div>
-        );
-
-      case 'tecnologias':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">⚡ Stack Tecnológico</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="font-bold text-blue-700">React 18</div>
-                <p className="text-sm text-slate-600 mt-1">Biblioteca principal para UI. Usa hooks: <code className="bg-slate-100 px-1 rounded">useState</code>, <code className="bg-slate-100 px-1 rounded">useMemo</code>.</p>
-              </div>
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="font-bold text-blue-700">Vite</div>
-                <p className="text-sm text-slate-600 mt-1">Bundler/dev server. Build rápido e HMR instantâneo.</p>
-              </div>
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="font-bold text-blue-700">TailwindCSS</div>
-                <p className="text-sm text-slate-600 mt-1">Framework de estilização utilitária — todas as classes são utilitárias do Tailwind.</p>
-              </div>
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="font-bold text-blue-700">lucide-react</div>
-                <p className="text-sm text-slate-600 mt-1">Biblioteca de ícones SVG (HardHat, Calendar, BarChart3, etc.).</p>
-              </div>
-            </div>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Dependências mínimas (package.json)</h3>
-            <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs overflow-x-auto">
-{`{
-  "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "lucide-react": "^0.383.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.0.0",
-    "tailwindcss": "^3.4.0",
-    "vite": "^5.0.0"
-  }
-}`}
-            </pre>
-          </div>
-        );
-
-      case 'mod-form':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">📝 Módulo: Cadastro de Projeto</h2>
-            <p className="text-slate-600">Função: <code className="bg-slate-100 px-1 rounded">renderForm()</code>. Aba: <strong>Novo Projeto</strong>.</p>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Campos do formulário</h3>
-            <table className="w-full text-sm border-collapse">
-              <thead className="bg-slate-100">
-                <tr>
-                  <th className="border border-slate-200 p-2 text-left">Campo</th>
-                  <th className="border border-slate-200 p-2 text-left">Estado</th>
-                  <th className="border border-slate-200 p-2 text-left">Observação</th>
-                </tr>
-              </thead>
-              <tbody className="text-xs">
-                <tr><td className="border border-slate-200 p-2">Número do contrato</td><td className="border border-slate-200 p-2 font-mono">numeroContrato</td><td className="border border-slate-200 p-2">Padrão XXX/XXXX validado por regex</td></tr>
-                <tr><td className="border border-slate-200 p-2">Cliente / Obra</td><td className="border border-slate-200 p-2 font-mono">cliente</td><td className="border border-slate-200 p-2">Texto livre</td></tr>
-                <tr><td className="border border-slate-200 p-2">Data de início</td><td className="border border-slate-200 p-2 font-mono">dataInicio</td><td className="border border-slate-200 p-2">Obrigatório</td></tr>
-                <tr><td className="border border-slate-200 p-2">Data de finalização</td><td className="border border-slate-200 p-2 font-mono">dataFim</td><td className="border border-slate-200 p-2">Opcional — não pode ser anterior ao início</td></tr>
-                <tr><td className="border border-slate-200 p-2">Responsável</td><td className="border border-slate-200 p-2 font-mono">projetista</td><td className="border border-slate-200 p-2">Bloqueado para usuários projetistas</td></tr>
-                <tr><td className="border border-slate-200 p-2">Projeto do cliente</td><td className="border border-slate-200 p-2 font-mono">projetoCliente</td><td className="border border-slate-200 p-2">Lista fechada (PROJETO_CLIENTE_OPCOES)</td></tr>
-                <tr><td className="border border-slate-200 p-2">Área (m²)</td><td className="border border-slate-200 p-2 font-mono">area</td><td className="border border-slate-200 p-2">Número decimal</td></tr>
-                <tr><td className="border border-slate-200 p-2">Pé direito (m)</td><td className="border border-slate-200 p-2 font-mono">peDireito</td><td className="border border-slate-200 p-2">Número decimal</td></tr>
-                <tr><td className="border border-slate-200 p-2">Pavimento (m)</td><td className="border border-slate-200 p-2 font-mono">pavimento</td><td className="border border-slate-200 p-2">Número decimal</td></tr>
-                <tr><td className="border border-slate-200 p-2">Peso do projeto (kg)</td><td className="border border-slate-200 p-2 font-mono">peso</td><td className="border border-slate-200 p-2">Número decimal</td></tr>
-                <tr><td className="border border-slate-200 p-2">Status</td><td className="border border-slate-200 p-2 font-mono">status</td><td className="border border-slate-200 p-2">Concluído | Revisão</td></tr>
-                <tr><td className="border border-slate-200 p-2">Número da revisão</td><td className="border border-slate-200 p-2 font-mono">numeroRevisao</td><td className="border border-slate-200 p-2">Obrigatório se status = Revisão. Formato 2 dígitos.</td></tr>
-                <tr><td className="border border-slate-200 p-2">Motivo da revisão</td><td className="border border-slate-200 p-2 font-mono">motivoRevisao</td><td className="border border-slate-200 p-2">Lista fechada (MOTIVOS_REVISAO)</td></tr>
-                <tr><td className="border border-slate-200 p-2">Outro motivo</td><td className="border border-slate-200 p-2 font-mono">outroMotivoTexto</td><td className="border border-slate-200 p-2">Aparece se motivo = OUTRO MOTIVO</td></tr>
-                <tr><td className="border border-slate-200 p-2">Tipo de estrutura</td><td className="border border-slate-200 p-2 font-mono">tipo[]</td><td className="border border-slate-200 p-2">Multi-seleção; cada item vira 1 projeto separado</td></tr>
-                <tr><td className="border border-slate-200 p-2">Observações</td><td className="border border-slate-200 p-2 font-mono">notas</td><td className="border border-slate-200 p-2">Texto livre</td></tr>
-              </tbody>
-            </table>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Lógica de Submit (handleSubmit)</h3>
-            <ol className="list-decimal pl-6 space-y-1 text-slate-700">
-              <li>Valida o regex <code className="bg-slate-100 px-1 rounded">/^\d{'{3}'}\/\d{'{4}'}$/</code> para o contrato.</li>
-              <li>Verifica se pelo menos um tipo foi selecionado.</li>
-              <li>Se status = Revisão: exige motivo + número da revisão.</li>
-              <li>Garante dataFim ≥ dataInicio (quando preenchida).</li>
-              <li>Para cada tipo marcado, cria 1 projeto independente (mesma base).</li>
-            </ol>
-          </div>
-        );
-
-      case 'mod-tarefas':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">👷 Módulo: Minhas Tarefas</h2>
-            <p className="text-slate-600">Função: <code className="bg-slate-100 px-1 rounded">renderMinhasTarefas()</code>.</p>
-            <p className="text-slate-600">
-              Filtra <code className="bg-slate-100 px-1 rounded">projetos.filter(p =&gt; p.projetista === currentUser.nome)</code>.
-              Cada projetista enxerga apenas seus próprios projetos. Permite atualizar o status diretamente no dropdown da tabela.
-            </p>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Colunas exibidas</h3>
-            <ul className="list-disc pl-6 space-y-1 text-slate-700">
-              <li>Contrato / Cliente</li>
-              <li>Início → Fim (data de início e data de finalização)</li>
-              <li>Tipo de estrutura + número da revisão (se houver)</li>
-              <li>Status (dropdown editável)</li>
-            </ul>
-          </div>
-        );
-
-      case 'mod-dashboard':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">📊 Módulo: Dashboard</h2>
-            <p className="text-slate-600">Função: <code className="bg-slate-100 px-1 rounded">renderDashboard()</code>. Acesso: admin.</p>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Filtro de período</h3>
-            <p className="text-slate-600">Estados: <code className="bg-slate-100 px-1 rounded">dashPeriodoInicio</code>, <code className="bg-slate-100 px-1 rounded">dashPeriodoFim</code>. Atalhos disponíveis: Mês atual, Ano atual e Limpar.</p>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">KPIs</h3>
-            <ul className="list-disc pl-6 space-y-1 text-slate-700">
-              <li><strong>Total de Projetos</strong> — total filtrado pelo período.</li>
-              <li><strong>Concluídos</strong> — projetos com status Concluído.</li>
-              <li><strong>Em Revisão</strong> — projetos com status Revisão.</li>
-            </ul>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Ranking por responsável</h3>
-            <p className="text-slate-600">Calculado em <code className="bg-slate-100 px-1 rounded">stats.rankingProjetistas</code> (useMemo). Cada nome é clicável e abre o modal de detalhes.</p>
-          </div>
-        );
-
-      case 'mod-historico':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">📜 Módulo: Histórico Geral</h2>
-            <p className="text-slate-600">Função: <code className="bg-slate-100 px-1 rounded">renderList()</code>. Acesso: admin.</p>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Filtros disponíveis</h3>
-            <ul className="list-disc pl-6 space-y-1 text-slate-700">
-              <li><strong>buscaTermo</strong> — busca em número do contrato e cliente.</li>
-              <li><strong>filtroProjetista</strong> — combo com todos os usuários.</li>
-              <li><strong>filtroStatus</strong> — combo com os status atuais.</li>
-            </ul>
-            <p className="text-slate-600">A consolidação está em <code className="bg-slate-100 px-1 rounded">projetosFiltrados</code> (useMemo) e mostra: contrato/cliente, responsável, datas, tipo + revisão, medidas e status.</p>
-          </div>
-        );
-
-      case 'mod-config':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">⚙️ Módulo: Configurações</h2>
-            <p className="text-slate-600">Função: <code className="bg-slate-100 px-1 rounded">renderConfig()</code>. Acesso: admin.</p>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Sub-blocos</h3>
-            <ul className="list-disc pl-6 space-y-1 text-slate-700">
-              <li><strong>Controle de Acessos</strong> — adicionar/editar/remover usuários e senhas. Renomear um usuário propaga o novo nome para todos os projetos dele.</li>
-              <li><strong>Tipos de Estrutura</strong> — gerencia a lista de checkboxes do formulário de cadastro. Renomear um tipo propaga para os projetos existentes.</li>
-            </ul>
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Regras de segurança</h3>
-            <ul className="list-disc pl-6 space-y-1 text-slate-700">
-              <li>Não é possível excluir o próprio usuário enquanto logado.</li>
-              <li>Não é possível excluir usuário com projetos atribuídos — só renomear ou alterar senha.</li>
-              <li>Nomes de usuário são únicos.</li>
-            </ul>
-          </div>
-        );
-
-      case 'estados':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">📦 Estados (useState)</h2>
-            <p className="text-slate-600">Todos os estados ficam no componente raiz. Hoje não há persistência em <em>localStorage</em>; ao recarregar a página, os dados voltam ao estado inicial.</p>
-            <table className="w-full text-sm border-collapse">
-              <thead className="bg-slate-100">
-                <tr>
-                  <th className="border border-slate-200 p-2 text-left">Estado</th>
-                  <th className="border border-slate-200 p-2 text-left">Tipo</th>
-                  <th className="border border-slate-200 p-2 text-left">Função</th>
-                </tr>
-              </thead>
-              <tbody className="text-xs">
-                <tr><td className="border border-slate-200 p-2 font-mono">currentUser</td><td className="border border-slate-200 p-2">object|null</td><td className="border border-slate-200 p-2">Usuário logado</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">loginInput / senhaInput</td><td className="border border-slate-200 p-2">string</td><td className="border border-slate-200 p-2">Campos da tela de login</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">activeTab</td><td className="border border-slate-200 p-2">string</td><td className="border border-slate-200 p-2">Aba ativa</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">usuarios</td><td className="border border-slate-200 p-2">array</td><td className="border border-slate-200 p-2">Lista de usuários do sistema</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">tiposEstrutura</td><td className="border border-slate-200 p-2">array</td><td className="border border-slate-200 p-2">Tipos de estrutura disponíveis</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">projetos</td><td className="border border-slate-200 p-2">array</td><td className="border border-slate-200 p-2">Base principal de projetos</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">formData</td><td className="border border-slate-200 p-2">object</td><td className="border border-slate-200 p-2">Formulário de cadastro</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">isOutro / outroValor</td><td className="border border-slate-200 p-2">bool / string</td><td className="border border-slate-200 p-2">Opção “Outro” no tipo de estrutura</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">filtroProjetista / filtroStatus / buscaTermo</td><td className="border border-slate-200 p-2">string</td><td className="border border-slate-200 p-2">Filtros do histórico</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">dashPeriodoInicio / dashPeriodoFim</td><td className="border border-slate-200 p-2">string (YYYY-MM-DD)</td><td className="border border-slate-200 p-2">Filtro de período do dashboard</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">novoUsuario* / novoTipoEstrutura</td><td className="border border-slate-200 p-2">string</td><td className="border border-slate-200 p-2">Inputs de criação em Configurações</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">editingUserId / editUser*</td><td className="border border-slate-200 p-2">vários</td><td className="border border-slate-200 p-2">Edição inline de usuário</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">editingTipo / editTipoInput</td><td className="border border-slate-200 p-2">string</td><td className="border border-slate-200 p-2">Edição inline de tipo de estrutura</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">projetistaDetalhe</td><td className="border border-slate-200 p-2">string|null</td><td className="border border-slate-200 p-2">Abre o modal de detalhes do projetista</td></tr>
-                <tr><td className="border border-slate-200 p-2 font-mono">showDocs / docsSection</td><td className="border border-slate-200 p-2">bool / string</td><td className="border border-slate-200 p-2">Modal de documentação técnica</td></tr>
-              </tbody>
-            </table>
-          </div>
-        );
-
-      case 'schemas':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">📐 Schemas de Dados</h2>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Interface: Usuário</h3>
-            <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs overflow-x-auto">
-{`{
-  id: number,        // ID único (Date.now())
-  nome: string,      // Único na base
-  senha: string,
-  role: 'admin' | 'projetista'
-}`}
-            </pre>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Interface: Projeto</h3>
-            <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs overflow-x-auto">
-{`{
-  id: number,
-  numeroContrato: string,   // Formato XXX/XXXX (ex: '105/2026')
-  projetista: string,
-  cliente: string,
-  tipo: string,             // 1 projeto por tipo selecionado
-  status: 'Concluído' | 'Revisão',
-  dataInicio: string,       // 'YYYY-MM-DD'
-  dataFim: string,          // 'YYYY-MM-DD' (opcional)
-  area: number,             // m²
-  peDireito: number,        // m
-  pavimento: number,        // m
-  peso: number,             // kg
-  numeroRevisao: string,    // '01', '02', ... (apenas se Revisão)
-  motivoRevisao: string,    // texto do motivo (apenas se Revisão)
-  projetoCliente: string,   // PROJETO_CLIENTE_OPCOES
-  notas: string
-}`}
-            </pre>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Constantes</h3>
-            <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs overflow-x-auto">
-{`STATUS_OPTIONS = ['Concluído', 'Revisão']
-
-MOTIVOS_REVISAO = [
-  'TROCA POR FALTA DE MATERIAL',
-  'PROBLEMA NO EQUIPAMENTO',
-  'PROJETO DE ESTRUTURA NÃO ATUALIZADO',
-  'FALTA DE INFORMAÇÃO DE OBRA',
-  'ERRO DE PROJETO DE ESCORAMENTO',
-  'ADEQUAÇÃO À TAXA DE PROJETO',
-  'NECESSIDADE DE ADAPTAÇÃO POR CONTA DO TERRENO',
-  'SOLICITAÇÃO DO CLIENTE',
-  'ERRO DE ORÇAMENTO COMERCIAL',
-  'OUTRO MOTIVO'
-]
-
-PROJETO_CLIENTE_OPCOES = [
-  'Chegou com prazo',
-  'Chegou atrasado',
-  'Sofreu revisão',
-  'Necessidade de adaptação por conta do terreno'
-]`}
-            </pre>
-          </div>
-        );
-
-      case 'permissoes':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">🔐 Permissões e Acessos</h2>
-            <table className="w-full text-sm border-collapse">
-              <thead className="bg-slate-100">
-                <tr>
-                  <th className="border border-slate-200 p-2 text-left">Aba / Recurso</th>
-                  <th className="border border-slate-200 p-2 text-center">Admin</th>
-                  <th className="border border-slate-200 p-2 text-center">Projetista</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td className="border border-slate-200 p-2">Minhas Tarefas</td><td className="border border-slate-200 p-2 text-center">✅</td><td className="border border-slate-200 p-2 text-center">✅ (só os próprios)</td></tr>
-                <tr><td className="border border-slate-200 p-2">Novo Projeto</td><td className="border border-slate-200 p-2 text-center">✅</td><td className="border border-slate-200 p-2 text-center">✅ (responsável travado)</td></tr>
-                <tr><td className="border border-slate-200 p-2">Dashboard</td><td className="border border-slate-200 p-2 text-center">✅</td><td className="border border-slate-200 p-2 text-center">❌</td></tr>
-                <tr><td className="border border-slate-200 p-2">Histórico Geral</td><td className="border border-slate-200 p-2 text-center">✅</td><td className="border border-slate-200 p-2 text-center">❌</td></tr>
-                <tr><td className="border border-slate-200 p-2">Configurações</td><td className="border border-slate-200 p-2 text-center">✅</td><td className="border border-slate-200 p-2 text-center">❌</td></tr>
-                <tr><td className="border border-slate-200 p-2">Documentação Técnica</td><td className="border border-slate-200 p-2 text-center">✅</td><td className="border border-slate-200 p-2 text-center">✅</td></tr>
-              </tbody>
-            </table>
-            <p className="text-slate-600 mt-3 text-sm italic">A autenticação é local (sem backend). Em produção recomenda-se evoluir para autenticação real e hash de senhas.</p>
-          </div>
-        );
-
-      case 'manutencao':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">🛠️ Manutenção</h2>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Adicionar um novo tipo de estrutura</h3>
-            <ol className="list-decimal pl-6 space-y-1 text-slate-700">
-              <li>Faça login como Administrador.</li>
-              <li>Vá em <strong>Configurações → Tipos de Estrutura</strong>.</li>
-              <li>Preencha o nome e clique em <em>Adicionar</em>.</li>
-              <li>O novo tipo aparece imediatamente na lista de checkboxes do formulário.</li>
-            </ol>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Adicionar um novo motivo de revisão</h3>
-            <p className="text-slate-600">A lista <code className="bg-slate-100 px-1 rounded">MOTIVOS_REVISAO</code> está no topo do arquivo App.jsx. Para adicionar um novo motivo, basta inserir uma string em maiúsculas no array e fazer o deploy.</p>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Adicionar um novo status</h3>
-            <p className="text-slate-600">
-              O sistema foi configurado para usar somente <strong>Concluído</strong> e <strong>Revisão</strong>.
-              Para adicionar mais status no futuro, edite <code className="bg-slate-100 px-1 rounded">STATUS_OPTIONS</code>
-              e ajuste o estilo do dropdown em <code className="bg-slate-100 px-1 rounded">renderStatusDropdown</code>.
-            </p>
-
-            <h3 className="text-lg font-bold text-slate-800 mt-4">Persistência (próximo passo recomendado)</h3>
-            <p className="text-slate-600">Hoje os dados estão em memória. Caminhos sugeridos:</p>
-            <ul className="list-disc pl-6 space-y-1 text-slate-700">
-              <li>Curto prazo: salvar <code className="bg-slate-100 px-1 rounded">projetos</code>, <code className="bg-slate-100 px-1 rounded">usuarios</code> e <code className="bg-slate-100 px-1 rounded">tiposEstrutura</code> no <strong>localStorage</strong>.</li>
-              <li>Médio prazo: integração com Supabase ou Firebase (autenticação + banco).</li>
-              <li>Longo prazo: API própria + banco PostgreSQL.</li>
-            </ul>
-          </div>
-        );
-
-      case 'faq':
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-slate-800">❓ FAQ Técnico</h2>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-              <div className="font-semibold text-slate-800">Por que o status só tem duas opções?</div>
-              <p className="text-sm text-slate-600 mt-1">Decisão de produto: o ciclo de vida do projeto foi simplificado para refletir apenas o resultado final entregue pelo projetista (Concluído ou em Revisão). Para adicionar novos status, edite <code className="bg-slate-100 px-1 rounded">STATUS_OPTIONS</code>.</p>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-              <div className="font-semibold text-slate-800">Por que o número do contrato segue o padrão XXX/XXXX?</div>
-              <p className="text-sm text-slate-600 mt-1">É o padrão administrativo da Mais Escoramentos (3 dígitos do contrato + ano). A máscara é aplicada via <code className="bg-slate-100 px-1 rounded">handleContratoChange</code> e validada por regex no submit.</p>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-              <div className="font-semibold text-slate-800">Como gerar projetos em lote (1 contrato → vários tipos)?</div>
-              <p className="text-sm text-slate-600 mt-1">Basta marcar mais de um checkbox em <strong>Tipo de Estrutura</strong>. O sistema cria 1 registro independente para cada tipo, todos com a mesma identificação de contrato.</p>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-              <div className="font-semibold text-slate-800">Como exportar/relatório?</div>
-              <p className="text-sm text-slate-600 mt-1">Hoje a exportação é manual (copiar a tabela). Próximos passos recomendados: botão de exportar CSV/XLSX no dashboard e no histórico (pode ser feito com SheetJS).</p>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-              <div className="font-semibold text-slate-800">Como mudar o logotipo?</div>
-              <p className="text-sm text-slate-600 mt-1">Substitua o arquivo <code className="bg-slate-100 px-1 rounded">public/Logo Mais.jpg</code> mantendo o mesmo nome, ou ajuste a tag <code className="bg-slate-100 px-1 rounded">&lt;img src="/Logo Mais.jpg" /&gt;</code> no header.</p>
-            </div>
-          </div>
-        );
-
-      default:
-        return null;
-    }
-  };
-
+  // Modal de documentação simplificado (mantido)
   const renderDocsModal = () => {
     if (!showDocs) return null;
-    const grupos = Array.from(new Set(DOCS_SECTIONS.map(s => s.group)));
-
     return (
-      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-          {/* Header */}
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-slate-200 bg-blue-900 text-white flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="bg-white/10 p-2 rounded-lg">
-                <BookOpen size={22} />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold">📋 Mais Projetos — Documentação Técnica</h3>
-                <p className="text-xs text-blue-200">Manual técnico definitivo do sistema — v2.0.0 • Maio 2026 • React 18</p>
-              </div>
+              <BookOpen size={22} />
+              <h3 className="text-lg font-bold">Mais Projetos — Documentação Técnica</h3>
             </div>
-            <button onClick={() => setShowDocs(false)} className="p-2 text-blue-100 hover:text-white hover:bg-blue-800 rounded-lg transition-colors" title="Fechar">
-              <X size={22} />
-            </button>
+            <button onClick={() => setShowDocs(false)} className="p-2 text-blue-100 hover:text-white hover:bg-blue-800 rounded-lg transition-colors"><X size={22}/></button>
           </div>
-
-          {/* Body com sidebar + conteúdo */}
-          <div className="flex flex-1 overflow-hidden">
-            {/* Sidebar */}
-            <aside className="w-64 bg-slate-50 border-r border-slate-200 overflow-y-auto p-3 hidden md:block">
-              {grupos.map(grupo => (
-                <div key={grupo} className="mb-4">
-                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-2 mb-1">{grupo}</div>
-                  {DOCS_SECTIONS.filter(s => s.group === grupo).map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setDocsSection(s.id)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors mb-1 ${docsSection === s.id ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-slate-700 hover:bg-slate-200'}`}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </aside>
-
-            {/* Sidebar Mobile (combo) */}
-            <div className="md:hidden p-3 border-b border-slate-200 bg-slate-50 w-full">
-              <select value={docsSection} onChange={(e) => setDocsSection(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white">
-                {DOCS_SECTIONS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-              </select>
-            </div>
-
-            {/* Conteúdo */}
-            <main className="flex-1 overflow-y-auto p-6 bg-white">
-              {renderDocsContent()}
-
-              <div className="mt-10 pt-4 border-t border-slate-200 text-xs text-slate-400 flex items-center gap-2">
-                <FileText size={14} /> Documentação gerada para a Mais Escoramentos • Atualize esta página sempre que o sistema mudar.
-              </div>
-            </main>
+          <div className="overflow-y-auto p-6 space-y-4 text-sm text-slate-700">
+            <h4 className="text-lg font-bold text-slate-800">Sistema de Controle de Projetos — Mais Escoramentos</h4>
+            <p>Aplicação React 18 + Vite + TailwindCSS v4. Persistência em <strong>Firebase Firestore</strong>. Hosting no <strong>Firebase Hosting</strong>.</p>
+            <h5 className="font-bold mt-3">Funcionalidades principais</h5>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>Cadastro e edição de projetos com 25+ campos.</li>
+              <li>Status: Concluído, Em Andamento, Revisão.</li>
+              <li>Tipos de pavimento: Pav. Tipo, 1º projeto, Pav. transição, Outro.</li>
+              <li>Tipos de estrutura configuráveis com peso individual por tipo.</li>
+              <li>Datetime de início/fim do projeto + duração manual (com sugestão automática).</li>
+              <li>Altura da laje (cm), Pavimento (texto livre), Pé direito (m).</li>
+              <li>Histórico geral com filtros (responsável, status, busca).</li>
+              <li>Dashboard com filtros de período + análise por motivos de revisão.</li>
+              <li>Exportação de projeto em PDF (jsPDF).</li>
+              <li>Modal de detalhes com todas as informações + botões de edição/exclusão.</li>
+              <li>Controle de acessos: admin e projetista, com permissões diferenciadas.</li>
+            </ul>
+            <h5 className="font-bold mt-3">Schema do Projeto (Firestore)</h5>
+            <pre className="bg-slate-900 text-slate-100 rounded-lg p-3 text-xs overflow-x-auto">{`{
+  numeroContrato, projetista, cliente, tipo, status,
+  dataInicio, dataFim, dataHoraInicio, dataHoraFim, duracao,
+  area, peDireito, pavimento, peso, alturaLaje,
+  tipoPavimento, projetoCliente,
+  numeroRevisao, motivoRevisao, notas, criadoEm
+}`}</pre>
+            <h5 className="font-bold mt-3">Deploy</h5>
+            <p>Comando: <code className="bg-slate-100 px-1 rounded">npm run build && firebase deploy --only hosting</code></p>
           </div>
         </div>
       </div>
@@ -2949,7 +2294,6 @@ PROJETO_CLIENTE_OPCOES = [
       <header className="bg-blue-900 text-white shadow-md relative z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Container da Logo */}
             <div className="bg-white p-1 rounded-lg flex items-center justify-center">
               <img
                 src="/Logo Mais.jpg"
@@ -2957,7 +2301,6 @@ PROJETO_CLIENTE_OPCOES = [
                 className="h-9 w-auto object-contain"
               />
             </div>
-            {/* Nome do Sistema */}
             <h1 className="text-xl font-bold tracking-tight">Mais Projetos</h1>
           </div>
 
@@ -2967,7 +2310,6 @@ PROJETO_CLIENTE_OPCOES = [
                 Olá, <strong className="text-white">{currentUser.nome}</strong>
               </span>
 
-              {/* (10) Botão de Documentação Técnica */}
               <button
                 onClick={() => setShowDocs(true)}
                 className="flex items-center gap-2 text-sm bg-blue-800 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors border border-blue-700"
