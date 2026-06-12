@@ -112,24 +112,23 @@ const initialFormData = () => ({
   cliente: '',
   tipo: [],
   status: 'Concluído',
-  dataInicio: new Date().toISOString().split('T')[0],
-  dataFim: '',
+  // dataInicio/dataFim são DERIVADOS automaticamente no submit a partir do datetime por tipo
   area: '',
   peDireito: '',
   pavimento: '',
   peso: '',
   pesoPorTipo: {},
+  // (12) Cronograma POR TIPO: cada estrutura selecionada tem seu próprio início/fim/duração
+  dataHoraInicioPorTipo: {},
+  dataHoraFimPorTipo: {},
+  duracaoPorTipo: {},
   numeroRevisao: '',
   motivoRevisao: '',
   outroMotivoTexto: '',
   projetoCliente: '',
-  // (11) Novos campos
   tipoPavimento: '',
   outroTipoPavimentoTexto: '',
   alturaLaje: '',
-  dataHoraInicio: '',
-  dataHoraFim: '',
-  duracao: '',
   notas: ''
 });
 
@@ -362,16 +361,16 @@ export default function App() {
       }
     }
 
-    // Validação: data fim >= data início (se preenchida)
-    if (formData.dataFim && formData.dataFim < formData.dataInicio) {
-      alert('A "Data de finalização" não pode ser anterior à "Data de início".');
-      return;
-    }
-
-    // Validação: dataHoraFim >= dataHoraInicio (se preenchidas)
-    if (formData.dataHoraInicio && formData.dataHoraFim && formData.dataHoraFim < formData.dataHoraInicio) {
-      alert('A "Data e Hora de finalização" não pode ser anterior à "Data e Hora de início".');
-      return;
+    // (12) Validação: para cada tipo selecionado, se fim < início, bloqueia
+    for (const tSel of tiposSelecionados) {
+      const isOutroTipo = isOutro && outroValor.trim() && tSel === outroValor.trim().toUpperCase();
+      const k = isOutroTipo ? '__outro__' : tSel;
+      const dhI = (formData.dataHoraInicioPorTipo || {})[k];
+      const dhF = (formData.dataHoraFimPorTipo || {})[k];
+      if (dhI && dhF && dhF < dhI) {
+        alert(`No tipo "${tSel}", a Data e Hora de fim não pode ser anterior à de início.`);
+        return;
+      }
     }
 
     const baseId = Date.now();
@@ -383,21 +382,25 @@ export default function App() {
       ? `OUTRO MOTIVO: ${formData.outroMotivoTexto.trim()}`
       : formData.motivoRevisao;
 
-    // (11) Tipo de pavimento final (com "Outro" → texto digitado)
+    // Tipo de pavimento final (com "Outro" → texto digitado)
     const tipoPavimentoFinal = formData.tipoPavimento === 'Outro'
       ? (formData.outroTipoPavimentoTexto.trim() || 'Outro')
       : (formData.tipoPavimento || '');
 
-    // (11) Duração final (manual ou auto)
-    const duracaoFinal = (formData.duracao || '').trim()
-      || calcularDuracao(formData.dataHoraInicio, formData.dataHoraFim)
-      || '';
-
     const novosProjetos = tiposSelecionados.map((tipoSelecionado, index) => {
-      const chave = tipoSelecionado === (isOutro && outroValor.trim() ? outroValor.trim().toUpperCase() : null)
-        ? '__outro__'
-        : tipoSelecionado;
+      const isOutroTipo = isOutro && outroValor.trim() && tipoSelecionado === outroValor.trim().toUpperCase();
+      const chave = isOutroTipo ? '__outro__' : tipoSelecionado;
+
       const pesoDoTipo = Number((formData.pesoPorTipo || {})[chave] || (formData.pesoPorTipo || {})[tipoSelecionado] || 0);
+      const dhInicioTipo = (formData.dataHoraInicioPorTipo || {})[chave] || (formData.dataHoraInicioPorTipo || {})[tipoSelecionado] || '';
+      const dhFimTipo = (formData.dataHoraFimPorTipo || {})[chave] || (formData.dataHoraFimPorTipo || {})[tipoSelecionado] || '';
+      const duracaoDoTipoManual = ((formData.duracaoPorTipo || {})[chave] || (formData.duracaoPorTipo || {})[tipoSelecionado] || '').toString().trim();
+      const duracaoFinalTipo = duracaoDoTipoManual || calcularDuracao(dhInicioTipo, dhFimTipo) || '';
+
+      // (12) Deriva dataInicio/dataFim automaticamente do datetime (parte YYYY-MM-DD)
+      const dataInicioDerivada = dhInicioTipo ? dhInicioTipo.split('T')[0] : '';
+      const dataFimDerivada = dhFimTipo ? dhFimTipo.split('T')[0] : '';
+
       return {
         ...formData,
         id: baseId + index,
@@ -407,13 +410,20 @@ export default function App() {
         pavimento: formData.pavimento || '',
         peso: pesoDoTipo,
         pesoPorTipo: undefined,
-        // (11) Sanitização dos novos campos
+        dataHoraInicioPorTipo: undefined,
+        dataHoraFimPorTipo: undefined,
+        duracaoPorTipo: undefined,
+        // (12) Cronograma específico deste tipo
+        dataHoraInicio: dhInicioTipo,
+        dataHoraFim: dhFimTipo,
+        duracao: duracaoFinalTipo,
+        // dataInicio / dataFim derivados (para o dashboard continuar filtrando por período)
+        dataInicio: dataInicioDerivada,
+        dataFim: dataFimDerivada,
+        // Demais campos
         tipoPavimento: tipoPavimentoFinal,
         outroTipoPavimentoTexto: undefined,
         alturaLaje: (formData.alturaLaje || '').toString().trim(),
-        dataHoraInicio: formData.dataHoraInicio || '',
-        dataHoraFim: formData.dataHoraFim || '',
-        duracao: duracaoFinal,
         numeroRevisao: numeroRevisaoFinal,
         motivoRevisao: formData.status === 'Revisão' ? motivoFinal : ''
       };
@@ -421,7 +431,7 @@ export default function App() {
 
     // Modo edição: atualiza o projeto existente
     if (modoEdicao && projetoEditandoId) {
-      const { id: _id, pesoPorTipo: _ppt, outroTipoPavimentoTexto: _opt, ...dadosAtualizados } = novosProjetos[0];
+      const { id: _id, pesoPorTipo: _ppt, outroTipoPavimentoTexto: _opt, dataHoraInicioPorTipo: _di, dataHoraFimPorTipo: _df, duracaoPorTipo: _du, ...dadosAtualizados } = novosProjetos[0];
       try {
         await updateDoc(doc(db, 'projetos', String(projetoEditandoId)), dadosAtualizados);
       } catch (err) {
@@ -438,10 +448,10 @@ export default function App() {
       return;
     }
 
-    // Salvar cada projeto no Firestore
+    // Salvar cada projeto no Firestore (removendo mapas auxiliares)
     try {
       await Promise.all(novosProjetos.map(p => {
-        const { id, pesoPorTipo, outroTipoPavimentoTexto, ...dados } = p;
+        const { id, pesoPorTipo, outroTipoPavimentoTexto, dataHoraInicioPorTipo, dataHoraFimPorTipo, duracaoPorTipo, ...dados } = p;
         return addDoc(collection(db, 'projetos'), { ...dados, criadoEm: Date.now() });
       }));
     } catch (err) {
@@ -800,24 +810,22 @@ export default function App() {
       cliente: projeto.cliente || '',
       tipo: [projeto.tipo] || [],
       status: projeto.status || 'Concluído',
-      dataInicio: projeto.dataInicio || '',
-      dataFim: projeto.dataFim || '',
       area: projeto.area || '',
       peDireito: projeto.peDireito || '',
       pavimento: projeto.pavimento || '',
       peso: projeto.peso || '',
-      pesoPorTipo: { [projeto.tipo]: projeto.peso },
+      // (12) Cronograma por tipo: restaura apenas para o tipo deste projeto
+      pesoPorTipo: { [projeto.tipo]: projeto.peso || '' },
+      dataHoraInicioPorTipo: { [projeto.tipo]: projeto.dataHoraInicio || '' },
+      dataHoraFimPorTipo: { [projeto.tipo]: projeto.dataHoraFim || '' },
+      duracaoPorTipo: { [projeto.tipo]: projeto.duracao || '' },
       numeroRevisao: projeto.numeroRevisao || '',
       motivoRevisao: motivoEhOutro ? 'OUTRO MOTIVO' : (projeto.motivoRevisao || ''),
       outroMotivoTexto,
       projetoCliente: projeto.projetoCliente || '',
-      // (11) Restaura novos campos
       tipoPavimento: ehOutroPav ? 'Outro' : (projeto.tipoPavimento || ''),
       outroTipoPavimentoTexto: ehOutroPav ? projeto.tipoPavimento : '',
       alturaLaje: projeto.alturaLaje || '',
-      dataHoraInicio: projeto.dataHoraInicio || '',
-      dataHoraFim: projeto.dataHoraFim || '',
-      duracao: projeto.duracao || '',
       notas: projeto.notas || ''
     });
     setIsOutro(false);
@@ -1921,22 +1929,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Datas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <Calendar size={14} className="text-slate-400" /> Data de início *
-              </label>
-              <input required type="date" name="dataInicio" value={formData.dataInicio} onChange={handleInputChange} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <Calendar size={14} className="text-slate-400" /> Data de finalização
-              </label>
-              <input type="date" name="dataFim" value={formData.dataFim} onChange={handleInputChange} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-            </div>
-          </div>
-
           {/* Responsável e Projeto do cliente */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1">
@@ -2036,52 +2028,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* (11) Data/Hora de início e finalização + Duração manual */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <Calendar size={14} className="text-slate-400" /> Data e Hora de início do projeto
-              </label>
-              <input
-                type="datetime-local"
-                name="dataHoraInicio"
-                value={formData.dataHoraInicio}
-                onChange={handleInputChange}
-                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <Calendar size={14} className="text-slate-400" /> Data e Hora de finalização do projeto
-              </label>
-              <input
-                type="datetime-local"
-                name="dataHoraFim"
-                value={formData.dataHoraFim}
-                onChange={handleInputChange}
-                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <Clock size={14} className="text-slate-400" /> Duração do projeto
-              </label>
-              <input
-                type="text"
-                name="duracao"
-                value={formData.duracao}
-                onChange={handleInputChange}
-                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                placeholder={calcularDuracao(formData.dataHoraInicio, formData.dataHoraFim) || 'Ex: 3h 30min, 2 dias...'}
-              />
-              {calcularDuracao(formData.dataHoraInicio, formData.dataHoraFim) && !formData.duracao && (
-                <p className="text-xs text-slate-500 italic mt-1">
-                  Sugestão calculada: <strong className="font-mono">{calcularDuracao(formData.dataHoraInicio, formData.dataHoraFim)}</strong>
-                </p>
-              )}
-            </div>
-          </div>
-
           {/* Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1">
@@ -2150,59 +2096,134 @@ export default function App() {
 
           {/* Tipo de Estrutura */}
           <div className="space-y-3">
-            <label className="text-sm font-medium text-slate-800 uppercase tracking-wide">Tipo *</label>
+            <label className="text-sm font-medium text-slate-800 uppercase tracking-wide">Tipo de estrutura *</label>
+            <p className="text-xs text-slate-500 mt-1">Marque um ou mais tipos. Para cada tipo, preencha peso, data/hora de início e fim e a duração.</p>
             <div className="flex flex-col gap-2 ml-1">
-              {tiposEstrutura.map(t => (
-                <div key={t} className="flex items-center gap-3">
-                  <label className="flex items-center gap-3 cursor-pointer group min-w-[260px]">
-                    <input type="checkbox" checked={formData.tipo.includes(t)} onChange={() => handleTipoChange(t)} className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500 cursor-pointer" />
-                    <span className="text-slate-800 text-[15px] group-hover:text-blue-700 transition-colors uppercase">{t}</span>
-                  </label>
-                  {formData.tipo.includes(t) && (
-                    <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
-                      <Weight size={13} className="text-slate-400 shrink-0" />
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Peso (kg)"
-                        value={formData.pesoPorTipo?.[t] || ''}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          pesoPorTipo: { ...(prev.pesoPorTipo || {}), [t]: e.target.value }
-                        }))}
-                        className="w-32 p-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                      />
-                      <span className="text-xs text-slate-400">kg</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div className="flex items-center gap-3 mt-1">
-                <label className="flex items-center gap-3 cursor-pointer group min-w-[260px]">
-                  <input type="checkbox" checked={isOutro} onChange={() => setIsOutro(!isOutro)} className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500 cursor-pointer" />
-                  <span className="text-slate-800 text-[15px] uppercase mr-2">Outro:</span>
-                  <input type="text" value={outroValor} onChange={(e) => setOutroValor(e.target.value)} disabled={!isOutro} className={`flex-1 border-b ${isOutro ? 'border-slate-500 focus:border-blue-600' : 'border-slate-300 bg-slate-50 cursor-not-allowed'} py-1 outline-none text-[15px] uppercase transition-colors`} placeholder={isOutro ? 'Digite a estrutura...' : ''} />
-                </label>
-                {isOutro && outroValor.trim() && (
-                  <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
-                    <Weight size={13} className="text-slate-400 shrink-0" />
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="Peso (kg)"
-                      value={formData.pesoPorTipo?.['__outro__'] || ''}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        pesoPorTipo: { ...(prev.pesoPorTipo || {}), ['__outro__']: e.target.value }
-                      }))}
-                      className="w-32 p-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    />
-                    <span className="text-xs text-slate-400">kg</span>
+              {tiposEstrutura.map(t => {
+                const sel = formData.tipo.includes(t);
+                const dhI = formData.dataHoraInicioPorTipo?.[t] || '';
+                const dhF = formData.dataHoraFimPorTipo?.[t] || '';
+                const sug = calcularDuracao(dhI, dhF);
+                return (
+                  <div key={t} className={`rounded-lg transition-colors ${sel ? 'bg-blue-50/40 border border-blue-200 p-3' : 'p-1'}`}>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <input type="checkbox" checked={sel} onChange={() => handleTipoChange(t)} className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500 cursor-pointer" />
+                      <span className="text-slate-800 text-[15px] group-hover:text-blue-700 transition-colors uppercase font-medium">{t}</span>
+                    </label>
+                    {sel && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3 ml-8 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1"><Weight size={11} /> Peso (kg)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Ex: 850"
+                            value={formData.pesoPorTipo?.[t] || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, pesoPorTipo: { ...(prev.pesoPorTipo || {}), [t]: e.target.value } }))}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1"><Calendar size={11} /> Início (data e hora)</label>
+                          <input
+                            type="datetime-local"
+                            value={dhI}
+                            onChange={(e) => setFormData(prev => ({ ...prev, dataHoraInicioPorTipo: { ...(prev.dataHoraInicioPorTipo || {}), [t]: e.target.value } }))}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1"><Calendar size={11} /> Fim (data e hora)</label>
+                          <input
+                            type="datetime-local"
+                            value={dhF}
+                            onChange={(e) => setFormData(prev => ({ ...prev, dataHoraFimPorTipo: { ...(prev.dataHoraFimPorTipo || {}), [t]: e.target.value } }))}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1"><Clock size={11} /> Duração</label>
+                          <input
+                            type="text"
+                            value={formData.duracaoPorTipo?.[t] || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, duracaoPorTipo: { ...(prev.duracaoPorTipo || {}), [t]: e.target.value } }))}
+                            placeholder={sug || 'Ex: 3h 30min, 2 dias...'}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                          {sug && !formData.duracaoPorTipo?.[t] && (
+                            <p className="text-[10px] text-slate-500 italic">Sugestão: <strong className="font-mono">{sug}</strong></p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })}
+
+              {/* Opção "Outro" também com peso/datetime/duração */}
+              {(() => {
+                const k = '__outro__';
+                const dhI = formData.dataHoraInicioPorTipo?.[k] || '';
+                const dhF = formData.dataHoraFimPorTipo?.[k] || '';
+                const sug = calcularDuracao(dhI, dhF);
+                return (
+                  <div className={`rounded-lg transition-colors mt-1 ${isOutro ? 'bg-blue-50/40 border border-blue-200 p-3' : 'p-1'}`}>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <input type="checkbox" checked={isOutro} onChange={() => setIsOutro(!isOutro)} className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500 cursor-pointer" />
+                      <span className="text-slate-800 text-[15px] uppercase font-medium mr-2">Outro:</span>
+                      <input type="text" value={outroValor} onChange={(e) => setOutroValor(e.target.value)} disabled={!isOutro} className={`flex-1 border-b ${isOutro ? 'border-slate-500 focus:border-blue-600' : 'border-slate-300 bg-slate-50 cursor-not-allowed'} py-1 outline-none text-[15px] uppercase transition-colors`} placeholder={isOutro ? 'Digite a estrutura...' : ''} />
+                    </label>
+                    {isOutro && outroValor.trim() && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3 ml-8 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1"><Weight size={11} /> Peso (kg)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Ex: 850"
+                            value={formData.pesoPorTipo?.[k] || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, pesoPorTipo: { ...(prev.pesoPorTipo || {}), [k]: e.target.value } }))}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1"><Calendar size={11} /> Início (data e hora)</label>
+                          <input
+                            type="datetime-local"
+                            value={dhI}
+                            onChange={(e) => setFormData(prev => ({ ...prev, dataHoraInicioPorTipo: { ...(prev.dataHoraInicioPorTipo || {}), [k]: e.target.value } }))}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1"><Calendar size={11} /> Fim (data e hora)</label>
+                          <input
+                            type="datetime-local"
+                            value={dhF}
+                            onChange={(e) => setFormData(prev => ({ ...prev, dataHoraFimPorTipo: { ...(prev.dataHoraFimPorTipo || {}), [k]: e.target.value } }))}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1"><Clock size={11} /> Duração</label>
+                          <input
+                            type="text"
+                            value={formData.duracaoPorTipo?.[k] || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, duracaoPorTipo: { ...(prev.duracaoPorTipo || {}), [k]: e.target.value } }))}
+                            placeholder={sug || 'Ex: 3h 30min, 2 dias...'}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                          {sug && !formData.duracaoPorTipo?.[k] && (
+                            <p className="text-[10px] text-slate-500 italic">Sugestão: <strong className="font-mono">{sug}</strong></p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
